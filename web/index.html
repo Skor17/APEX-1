@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>APEX-1 · GCS</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./style.css">
+</head>
+<body>
+  <div class="hud" id="hud">
+    <!-- background layers -->
+    <div class="bg-glow"></div>
+    <div class="bg-grid"></div>
+    <div class="scanline"></div>
+    <div class="crt"></div>
+    <div class="visor"></div>
+
+    <!-- helmet corner brackets -->
+    <div class="corner tl"></div>
+    <div class="corner tr"></div>
+    <div class="corner bl"></div>
+    <div class="corner br"></div>
+
+    <!-- corner system readouts -->
+    <div class="sysreadout tl"><span class="sr-label">PWR</span><span class="sr-value" id="sr-pwr-v">—</span><span class="sr-bar" id="sr-pwr"></span></div>
+    <div class="sysreadout tr"><span class="sr-label">COM</span><span class="sr-value" id="sr-com-v">—</span><span class="sr-bar" id="sr-com"></span></div>
+    <div class="sysreadout bl"><span class="sr-label">NAV</span><span class="sr-value" id="sr-nav-v">—</span><span class="sr-bar" id="sr-nav"></span></div>
+    <div class="sysreadout br"><span class="sr-label">SYS</span><span class="sr-value" id="sr-sys-v">—</span><span class="sr-bar" id="sr-sys"></span></div>
+
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-name">APEX-1</span>
+        <span class="brand-sub">LITORAL&nbsp;GUIDANCE</span>
+      </div>
+      <div class="status" id="status">PRE-LAUNCH</div>
+      <div class="telemetry-top">
+        <div class="link" id="link">● AWAITING</div>
+        <div class="demo-badge hidden" id="demo-badge">DEMO · SYNTHETIC TELEMETRY</div>
+        <div class="readout">MET <span id="met">0.0</span><em>s</em></div>
+        <div class="readout">FLT <span id="flight">—</span></div>
+      </div>
+    </header>
+
+    <main class="main">
+      <div class="col">
+        <div class="gauge" id="g-velocity"></div>
+        <div class="gauge" id="g-accel"></div>
+        <div class="attitude" id="attitude"></div>
+      </div>
+      <div class="center">
+        <div class="compass" id="compass"></div>
+        <div class="alttape-wrap">
+          <div class="alttape" id="alttape"></div>
+          <div class="reactor" id="reactor"></div>
+          <div class="alttape" id="alttape-r"></div>
+        </div>
+      </div>
+      <div class="col">
+        <div class="gauge" id="g-pressure"></div>
+        <div class="gauge" id="g-temperature"></div>
+        <div class="mini">
+          <div class="mini-row"><span class="mini-label">VEL</span><span class="mini-val" id="vel-big">--</span><span class="mini-unit">m/s</span><span class="trend" id="trend-vel"></span></div>
+          <div class="mini-row"><span class="mini-label">ALT</span><span class="mini-val" id="alt-big">--</span><span class="mini-unit">m</span><span class="trend" id="trend-alt"></span></div>
+        </div>
+      </div>
+    </main>
+
+    <footer class="bottombar">
+      <div class="radar" id="radar"></div>
+      <div class="chart" id="chart-altitude"></div>
+      <div class="chart" id="chart-velocity"></div>
+    </footer>
+
+    <div class="awaiting" id="awaiting">
+      <div class="awaiting-text">AWAITING TELEMETRY</div>
+      <div class="awaiting-sub">start the vehicle&nbsp;·&nbsp;<code>python simulator.py</code></div>
+    </div>
+  </div>
+  <script src="./app.js"></script>
+</body>
+</html>

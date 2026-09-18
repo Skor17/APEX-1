@@ -2,7 +2,7 @@
 
 ## Try the live HUD — no install needed
 
-Open this link in any browser: **https://GITHUB_USERNAME_PLACEHOLDER.github.io/APEX-1/?demo=1**
+Open this link in any browser: **https://skor17.github.io/APEX-1/?demo=1**
 
 It runs a simulated rocket flight in real time on an Iron Man-style cockpit
 display — launch, boost, apogee, parachute, landing, and an automatic

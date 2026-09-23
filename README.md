@@ -11,10 +11,11 @@ relaunch — with no Python, no setup, no account.
 - The site is hosted on GitHub Pages and **auto-deploys on every push to
   `main`**, so the link always shows the latest HUD.
 - `?demo=1` forces demo (synthetic telemetry) mode. Without it, the same page
-  looks for a live ground station first and **automatically falls back to
-  demo mode if no GCS is running** — that's how it works on a plain GitHub
-  Pages URL. When a real GCS *is* reachable, the HUD switches to live
-  telemetry on its own.
+  looks for a live ground station first; after ~5 s with no live feed it
+  opens on a **recorded flight (replay)** from `web/missions/`, auto-falling
+  back to the synthetic demo only if that mission file is missing. When a
+  real GCS *is* reachable, the HUD switches to live telemetry on its own
+  (and a live feed interrupts an auto-replay on the spot).
 - Want the full system? See the quick start below — `python simulator.py` +
   `python gcs.py` streams real simulated telemetry into the same HUD at
   `http://localhost:8501`.
@@ -106,6 +107,43 @@ One JSON object per sample, sent over UDP:
 | `accel`       | m/s²    | MPU6050 — specific force (reads ~+9.81 at rest, ~0 in freefall) |
 | `pressure`    | hPa     | BMP280                          |
 | `temperature` | °C      | BMP280                          |
+
+## Mission log
+
+The HUD has a **MISSION LOG** panel (center column, under the reactor):
+**● REC** records the session you're currently watching — live, demo, or
+replay — and **▶ PLAY** replays a captured mission frame-for-frame at its
+native 50 Hz.
+
+A *mission file* is NDJSON — one telemetry frame per line, the same 8 keys
+in the same order as the wire format above. One file is one complete flight
+(`PRE-LAUNCH` → `LANDED`, including the ~1.5 s on-pad hold), so the player
+can loop it cleanly. The public page ships one committed mission at
+`web/missions/apex1_flight_001.ndjson` and plays it by default; the
+selector is there for future multi-mission support.
+
+Capture one (run alongside `simulator.py`):
+
+```bash
+python tools/record.py --help
+```
+
+- **Live capture (default):** `python tools/record.py` binds UDP/5551 and
+ writes each valid frame to `missions/apex1_flight_NNN.ndjson`, opening a
+ new file at every flight-number boundary (Ctrl+C to stop). **Stop the GCS
+ first** — `gcs.py` owns UDP/5551 while it runs, so the recorder must run
+ in its place: start `simulator.py` + `tools/record.py`, watch the console
+ (or open the HUD at the GCS *after* you switch back), and each flight
+ lands in its own file. (Alternatively skip the wire entirely: press ● REC
+ in the HUD's MISSION LOG panel — the browser records any session — or use
+ the in-process mode below.)
+- **In-process capture:** `python tools/record.py --demo --count 1 --seed 7`
+ runs `simulator.py`'s flight in-process (no GCS, no UDP) and writes the
+ same NDJSON — this is how the committed mission was generated.
+
+Local captures go to `missions/` at the repo root, which is git-ignored so
+they don't bloat the repo; `web/missions/` is committed and served by both
+GitHub Pages and the GCS (`/missions/*.ndjson`).
 
 ## The sensor model
 

@@ -38,6 +38,7 @@
       <div class="telemetry-top">
         <div class="link" id="link">● AWAITING</div>
         <div class="demo-badge hidden" id="demo-badge">DEMO · SYNTHETIC TELEMETRY</div>
+        <div class="demo-badge replay-badge hidden" id="replay-badge">REPLAY · RECORDED TELEMETRY</div>
         <div class="readout">MET <span id="met">0.0</span><em>s</em></div>
         <div class="readout">FLT <span id="flight">—</span></div>
       </div>
@@ -56,6 +57,19 @@
           <div class="reactor" id="reactor"></div>
           <div class="alttape" id="alttape-r"></div>
         </div>
+        <section class="mission-log" id="mission-log">
+          <div class="ml-head">
+            <span class="ml-title">MISSION&nbsp;LOG</span>
+            <span class="ml-src" id="ml-src">STANDBY</span>
+            <span class="ml-info" id="ml-info">—</span>
+          </div>
+          <div class="ml-ctl">
+            <button class="ml-btn" id="ml-rec" title="Record this session">● REC</button>
+            <button class="ml-btn" id="ml-play" title="Play / pause the mission">▶ PLAY</button>
+            <select class="ml-sel" id="ml-sel" title="Choose a mission to replay"></select>
+            <span class="ml-note" id="ml-note">RECORDED TELEMETRY</span>
+          </div>
+        </section>
       </div>
       <div class="col">
         <div class="gauge" id="g-pressure"></div>

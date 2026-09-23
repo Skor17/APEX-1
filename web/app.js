@@ -23,6 +23,13 @@ const metEl = $("met");
 const flightEl = $("flight");
 const awaitingEl = $("awaiting");
 const demoBadgeEl = $("demo-badge");
+const replayBadgeEl = $("replay-badge");
+const mlSrcEl = $("ml-src");
+const mlInfoEl = $("ml-info");
+const mlRecBtn = $("ml-rec");
+const mlPlayBtn = $("ml-play");
+const mlSel = $("ml-sel");
+const mlNoteEl = $("ml-note");
 const velBigEl = $("vel-big");
 const altBigEl = $("alt-big");
 const trendVelEl = $("trend-vel");
@@ -465,6 +472,10 @@ function setTrend(el, delta, thr) {
 }
 
 function handleFrame(f) {
+  // Mission recorder: capture every frame that reaches the HUD — live WS,
+  // demo, and replay are all capturable (this is how the owner records a
+  // demo mission without a GCS).
+  if (record.on) recordPush(f);
   lastMsg = Date.now();
   const wasLive = gotFrame;
   if (!gotFrame) {
@@ -575,11 +586,256 @@ requestAnimationFrame(frameLoop);
 // Link liveness: the server only pushes new frames, so silence means stale.
 setInterval(() => {
   if (!gotFrame) return;
+  if (sessionActive()) return;   // replay/demo feed their own frames: never stale
   const stale = Date.now() - lastMsg > STALE_MS;
   linkEl.classList.toggle("stale", stale);
   linkEl.classList.toggle("live", !stale);
   linkEl.textContent = stale ? "● LINK STALE" : "● LIVE";
 }, 400);
+
+// ---------- mission log: replay player + session recorder ----------
+// REPLAY is a pure frame cursor over pre-stored NDJSON frames — never physics
+// re-simulation, so nothing can desync: every field of a frame moves together.
+// Playback advances at the recorded native cadence (50 Hz) via a wall-clock
+// accumulator; each frame flows through the existing handleFrame() pipeline,
+// so no instrument logic is duplicated. On end-of-file the player rests on
+// the pad for ~1.5 s (the last frames ARE the pad hold), then loops from
+// frame 0 — the t-rewind heuristic in the charts resets on that loop.
+const MISSION_URL = "./missions/apex1_flight_001.ndjson";
+const replay = { on: false, forced: false, playing: false, loaded: false, frames: null, cursor: 0, acc: 0, lastNow: 0, endAt: 0, raf: 0 };
+function sessionActive() { return demo.on || replay.on; }
+
+function loadMission(url, { onOk, onFail } = {}) {
+  fetch(url)
+    .then((r) => { if (!r.ok) throw new Error("HTTP " + r.status); return r.text(); })
+    .then((text) => {
+      const frames = [];
+      for (const line of text.split("\n")) {
+        if (!line.trim()) continue;               // skip blanks
+        try {
+          const f = JSON.parse(line);
+          if (f && typeof f.t === "number") frames.push(f);
+        } catch (_) { /* skip a bad line */ }
+      }
+      if (!frames.length) throw new Error("empty mission file");
+      const flightNo = frames[0].flight;
+      replay.frames = frames;
+      replay.loaded = true;
+      replay.cursor = 0;
+      const label = `FLIGHT ${String(flightNo).padStart(3, "0")}`;
+      if (!mlSel.options.length) {
+        const o = document.createElement("option");
+        o.value = url; o.textContent = label;
+        mlSel.appendChild(o);
+      }
+      (onOk || (() => {}))(frames, label);
+    })
+    .catch((e) => {
+      console.warn("mission load failed:", url, e);
+      (onFail || (() => {}))();
+    });
+}
+
+function replaySetUI() {
+  replayBadgeEl.classList.toggle("hidden", !replay.on);
+  linkEl.classList.remove("stale");
+  linkEl.classList.add("replay");
+  linkEl.classList.remove("live");
+  linkEl.textContent = "\u25CF REPLAY";
+}
+function replayClearUI() {
+  if (replay.on) return;
+  replayBadgeEl.classList.add("hidden");
+  linkEl.classList.remove("replay");
+}
+function mlInfo() {
+  if (record.on) {
+    const f = record.frames.length ? record.frames[record.frames.length - 1] : null;
+    mlInfoEl.textContent = `REC \u00B7 ${record.frames.length}f \u00B7 ${f ? f.t.toFixed(1) : "0.0"}s`;
+  } else if (replay.on && replay.frames) {
+    const f = replay.frames[Math.min(replay.cursor, replay.frames.length - 1)];
+    const t = replay.playing ? f.t.toFixed(1) : `PAUSED @ ${f.t.toFixed(1)}`;
+    mlInfoEl.textContent = `FLIGHT ${String(f.flight).padStart(3, "0")} \u00B7 T+${t}s \u00B7 50 Hz`;
+  } else if (demo.on) {
+    mlInfoEl.textContent = "SYNTHETIC LOOP \u00B7 50 Hz";
+  } else {
+    mlInfoEl.textContent = "—";
+  }
+}
+function updateSessionUI() {
+  if (replay.on) {
+    mlSrcEl.textContent = "REPLAY";
+  } else if (record.on) {
+    mlSrcEl.textContent = "REC";
+  } else if (demo.on) {
+    mlSrcEl.textContent = "DEMO";
+  } else if (gotFrame) {
+    mlSrcEl.textContent = "LIVE";
+  } else {
+    mlSrcEl.textContent = "STANDBY";
+  }
+  mlSrcEl.classList.toggle("rec", record.on);
+  mlPlayBtn.classList.toggle("playing", replay.on && replay.playing);
+  mlInfo();
+}
+function replayStep(nowMs) {
+  if (replay.endAt) {                       // end-of-file: rest on the pad
+    if (nowMs >= replay.endAt) {
+      replay.endAt = 0;
+      replay.cursor = 0;                     // loop; the t-rewind resets the charts
+    }
+    return;
+  }
+  const dt = Math.min(0.25, (nowMs - replay.lastNow) / 1000);
+  replay.lastNow = nowMs;
+  replay.acc += dt;
+  const step = 0.02;                          // native 50 Hz cadence, real time
+  while (replay.acc >= step && replay.cursor < replay.frames.length) {
+    replay.acc -= step;
+    handleFrame(replay.frames[replay.cursor]);
+    replay.cursor += 1;
+  }
+  if (replay.cursor >= replay.frames.length) {
+    replay.acc = 0;
+    replay.endAt = nowMs + 1500;              // last frames ARE the pad hold
+  }
+}
+function replayTick(nowMs) {
+  if (!replay.on) return;
+  if (replay.playing) replayStep(nowMs); else replay.lastNow = nowMs;
+  if (nowMs - lastSessionUiMs > 150) { lastSessionUiMs = nowMs; updateSessionUI(); }
+  if (replay.on) replay.raf = requestAnimationFrame(replayTick);
+}
+let lastSessionUiMs = 0;
+function startReplay(forced) {
+  if (replay.on) return;
+  if (record.on) stopRecording();             // a new session replaces a capture
+  replay.forced = !!forced;
+  if (replay.frames) {
+    replay.on = true;
+    markers.length = 0;                       // fresh session: clear old events
+    replay.cursor = 0; replay.acc = 0; replay.endAt = 0; replay.lastNow = 0;
+    replaySetUI();
+    playReplay();
+  } else {
+    replay.on = true;
+    loadMission(MISSION_URL, {
+      onOk: () => {
+        if (!replay.on) return;
+        markers.length = 0;
+        replaySetUI();
+        playReplay();
+      },
+      onFail: () => {
+        replay.on = false;                    // never die: fall back to the demo
+        mlNoteEl.textContent = "NO MISSION FOUND";
+        mlNoteEl.classList.add("ok");
+        setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+        startDemo(false);
+      },
+    });
+  }
+}
+function playReplay() {
+  if (!replay.on || !replay.frames) return;
+  replay.playing = true;
+  replay.lastNow = performance.now();
+  if (!replay.raf) replay.raf = requestAnimationFrame(replayTick);
+  updateSessionUI();
+}
+function pauseReplay() {
+  if (!replay.on || !replay.playing) return;
+  replay.playing = false;
+  replay.acc = 0;
+  updateSessionUI();                          // shows the paused T+
+}
+function stopReplay() {
+  if (!replay.on) return;
+  replay.on = false;
+  replay.playing = false;
+  if (replay.raf) { cancelAnimationFrame(replay.raf); replay.raf = 0; }
+  replay.endAt = 0; replay.acc = 0;
+  replayClearUI();
+  updateSessionUI();
+}
+
+// ---- session recorder: buffers every handleFrame() frame into NDJSON ----
+const REC_CAP = 100000;                       // ~33 min at 50 Hz
+const record = { on: false, frames: [] };
+function pad2(n) { return String(n).padStart(2, "0"); }
+function stamp() {
+  const d = new Date();
+  return `${d.getFullYear()}${pad2(d.getMonth() + 1)}${pad2(d.getDate())}_${pad2(d.getHours())}${pad2(d.getMinutes())}${pad2(d.getSeconds())}`;
+}
+function recordPush(f) {
+  record.frames.push(f);
+  if (record.frames.length >= REC_CAP) {      // overflow: save what we have
+    stopRecording(true);
+  }
+}
+function startRecording() {
+  if (record.on) return;
+  if (replay.on) stopReplay();
+  record.on = true;
+  record.frames = [];
+  mlRecBtn.classList.add("rec");
+  mlRecBtn.textContent = "\u25A0 STOP";
+  mlNoteEl.textContent = "RECORDING\u2026";
+  mlNoteEl.classList.remove("ok");
+  updateSessionUI();
+}
+function stopRecording(silent) {
+  if (!record.on) return;
+  record.on = false;
+  mlRecBtn.classList.remove("rec");
+  mlRecBtn.textContent = "\u25CF REC";
+  const frames = record.frames;
+  record.frames = [];
+  if (frames.length) {
+    const text = frames.map((f) => JSON.stringify(f)).join("\n") + "\n";
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([text], { type: "application/x-ndjson" }));
+    a.download = `apex1_flight_${stamp()}.ndjson`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    if (!silent) {
+      mlNoteEl.textContent = "SAVED \u2713";
+      mlNoteEl.classList.add("ok");
+      setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+    }
+  } else if (!silent) {
+    mlNoteEl.textContent = "NOTHING CAPTURED";
+    setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; }, 4000);
+  }
+  updateSessionUI();
+}
+mlRecBtn.addEventListener("click", () => { record.on ? stopRecording() : startRecording(); });
+mlPlayBtn.addEventListener("click", () => {
+  if (replay.on && replay.playing) { pauseReplay(); return; }
+  if (replay.on) { playReplay(); return; }
+  if (replay.loaded) startReplay(false);
+  else loadMission(MISSION_URL, {
+    onOk: () => startReplay(false),
+    onFail: () => {
+      mlNoteEl.textContent = "NO MISSION FOUND";
+      mlNoteEl.classList.add("ok");
+      setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+    },
+  });
+});
+mlSel.addEventListener("change", () => {
+  const url = mlSel.value || MISSION_URL;
+  loadMission(url, {
+    onOk: () => { if (replay.on) stopReplay(); startReplay(false); },
+    onFail: () => {
+      mlNoteEl.textContent = "NO MISSION FOUND";
+      mlNoteEl.classList.add("ok");
+      setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+    },
+  });
+});
 
 // ---------- demo mode (client-side synthetic telemetry, zero dependencies) ----------
 // A faithful re-implementation of simulator.py's flight + sensor model, driving
@@ -698,19 +954,24 @@ function connect() {
       const f = JSON.parse(e.data);
       if (f && typeof f.t === "number") { handleFrame(f); live = true; }
     } catch (_) { /* skip malformed frame */ }
-    // Real telemetry beat the 5-s fallback -> leave demo, go live.
+    // Real telemetry beat the auto session -> leave demo/replay, go live.
+    // (A forced demo or forced replay is never interrupted, as before.)
     if (live && demo.on && !demo.forced) stopDemo();
+    if (live && replay.on && !replay.forced) stopReplay();
   };
   ws.onclose = () => setTimeout(connect, RECONNECT_MS);
   ws.onerror = () => ws.close();
 }
 const params = new URLSearchParams(location.search);
 const forcedDemo = params.has("demo") && params.get("demo") !== "0";
+const forcedReplay = !forcedDemo && params.has("replay") && params.get("replay") !== "0";
 if (forcedDemo) {
-  startDemo(true);              // ?demo=1 -> demo immediately, never open the WS
+  startDemo(true);              // ?demo=1 -> demo immediately, never replay, never WS
+} else if (forcedReplay) {
+  startReplay(true);            // ?replay=1 -> replay now, no WS (demo on fetch fail)
 } else {
   connect();                    // normal WS flow (auto-reconnects if it drops)
-  setTimeout(() => {            // no GCS (e.g. GitHub Pages) -> auto demo after 5 s
-    if (!gotFrame && !demo.on) startDemo(false);
-  }, 5000);
+  setTimeout(() => {            // no live feed: play the recorded flight; if the
+    if (!gotFrame && !sessionActive()) startReplay(false);  // mission is missing,
+  }, 5000);                     // the replay loader itself falls back to the demo.
 }

@@ -96,10 +96,17 @@ async def ws(websocket: WebSocket) -> None:
             break
 
 
+# Mission log: recorded flights (NDJSON) served at /missions/*.ndjson so the
+# HUD's MISSION LOG panel also works when the GCS serves the page. Same
+# relative path the HUD uses from GitHub Pages (web/missions/).
+MISSIONS_DIR = Path(__file__).parent / "missions"
+MISSIONS_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/missions", StaticFiles(directory=MISSIONS_DIR, check_dir=False), name="missions")
+
 # Serve the HUD from web/ as the site root: GET / -> index.html, GET /app.js,
-# GET /style.css. Mounted AFTER the /ws route (and at "/") so it can never
-# shadow it. The same relative layout also works on GitHub Pages, which serves
-# web/ as the static site root.
+# GET /style.css. Mounted AFTER the /ws route and /missions (and at "/") so it
+# can never shadow them. The same relative layout also works on GitHub Pages,
+# which serves web/ as the static site root.
 app.mount("/", StaticFiles(directory=WEB_DIR, html=True), name="hud")
 
 

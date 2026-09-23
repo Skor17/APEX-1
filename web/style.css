@@ -138,6 +138,7 @@ html, body {
 .link { font-size: 14px; letter-spacing: 2px; padding: 5px 14px; border-radius: 20px;
   border: 1px solid var(--muted); color: var(--muted); }
 .link.live { color: var(--parachute); border-color: var(--parachute); text-shadow: 0 0 10px currentColor; }
+.link.replay { color: var(--cyan); border-color: var(--cyan); text-shadow: 0 0 10px currentColor; }
 .link.stale { color: #ff3b3b; border-color: #ff3b3b; }
 .hidden { display: none !important; }
 
@@ -153,6 +154,57 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.62; }
 }
+
+/* replay tag: same shape as the demo tag, cyan (recorded, not synthetic) */
+.replay-badge {
+  color: var(--cyan); border-color: rgba(0, 229, 255, 0.55); background: rgba(0, 229, 255, 0.07);
+  text-shadow: 0 0 8px rgba(0, 229, 255, 0.8); box-shadow: 0 0 10px rgba(0, 229, 255, 0.15);
+}
+
+/* ---------- mission log: record / replay panel (center column) ---------- */
+.mission-log {
+  flex: 0 0 auto; width: 100%; max-width: 600px; height: 46px;
+  display: flex; flex-direction: column; justify-content: center; gap: 3px;
+  padding: 4px 12px 5px;
+  border: 1px solid var(--cyan-dim); background: rgba(0, 229, 255, 0.03);
+}
+.ml-head { display: flex; align-items: baseline; gap: 12px; }
+.ml-title { font-family: var(--font-head); font-weight: 700; font-size: 11px;
+  letter-spacing: 3px; color: var(--cyan-soft); }
+.ml-src { font-family: var(--font-head); font-weight: 500; font-size: 10px;
+  letter-spacing: 2px; color: var(--muted); }
+.ml-src.rec { color: #ff5c33; text-shadow: 0 0 8px rgba(255, 92, 51, 0.7); }
+.ml-info { font-size: 11px; letter-spacing: 1px; color: var(--text); margin-left: auto;
+  text-shadow: 0 0 6px rgba(0,229,255,0.3); }
+.ml-ctl { display: flex; align-items: center; gap: 8px; }
+.ml-btn {
+  font-family: var(--font-head); font-weight: 500; font-size: 9px; letter-spacing: 1.5px;
+  padding: 3px 10px 4px; border-radius: 20px; cursor: pointer; white-space: nowrap;
+  color: var(--cyan-soft); border: 1px solid var(--cyan-dim); background: rgba(0, 229, 255, 0.04);
+  transition: color .15s, border-color .15s, background .15s, box-shadow .15s;
+}
+.ml-btn:hover { color: var(--cyan); border-color: var(--cyan-soft); background: rgba(0, 229, 255, 0.1); }
+.ml-btn:active { background: rgba(0, 229, 255, 0.18); }
+/* active states: recording glows red-amber, playing glows cyan */
+.ml-btn.rec {
+  color: #ff5c33; border-color: rgba(255, 92, 51, 0.7); background: rgba(255, 92, 51, 0.08);
+  animation: recPulse 1.1s ease-in-out infinite;
+}
+@keyframes recPulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(255, 92, 51, 0.35); }
+  50% { box-shadow: 0 0 12px rgba(255, 92, 51, 0.8); }
+}
+.ml-btn.playing { color: var(--cyan); border-color: rgba(0, 229, 255, 0.6);
+  background: rgba(0, 229, 255, 0.09); box-shadow: 0 0 8px rgba(0, 229, 255, 0.3); }
+.ml-sel {
+  font-family: var(--font-mono); font-size: 11px; letter-spacing: 1px;
+  padding: 3px 6px; background: var(--bg); color: var(--text);
+  border: 1px solid var(--cyan-dim); border-radius: 3px; outline: none;
+}
+.ml-sel:focus { border-color: var(--cyan-soft); }
+.ml-note { font-family: var(--font-head); font-weight: 500; font-size: 9px;
+  letter-spacing: 2px; color: var(--muted); margin-left: auto; }
+.ml-note.ok { color: var(--parachute); text-shadow: 0 0 8px rgba(61, 220, 132, 0.6); }
 .readout { font-size: 15px; letter-spacing: 1px; color: var(--muted); }
 .readout span { color: var(--text); font-size: 18px; }
 .readout em { font-style: normal; color: var(--muted); font-size: 12px; margin-left: 2px; }
@@ -341,6 +393,8 @@ html, body {
   .compass { width: 250px; }
   .status { font-size: 24px; letter-spacing: 6px; }
   .brand-name { font-size: 21px; }
+  .mission-log { height: 42px; max-width: 560px; }
+  .ml-info { font-size: 10px; }
 }
 @media (max-height: 700px) {
   .gauge { max-width: 160px; }
@@ -349,4 +403,9 @@ html, body {
   .reactor { max-width: 225px; }
   .alttape-wrap { max-height: 400px; }
   .status { font-size: 20px; }
+  .mission-log { height: 38px; max-width: 540px; padding: 3px 10px 4px; }
+  .ml-ctl { gap: 6px; }
+  .ml-btn { font-size: 8px; padding: 2px 8px 3px; }
+  .ml-sel { font-size: 10px; }
+  .ml-note { display: none; }
 }

@@ -598,12 +598,6 @@ const DEMO = {
   nAlt: 8.0, nAccel: 0.3, nVel: 0.5, nPress: 0.5, nTemp: 0.3, // 1-sigma sensor noise
 };
 const demo = { on: false, forced: false, flight: 0, t: 0, y: 0, v: 0, a: 0, chute: false, landed: false };
-// Demo clock: simulation advances `scale` sim-seconds per wall-second (same
-// physics, slower unfold). `frac` tracks the in-step fraction (0..1) so the
-// emitted `t` keeps advancing smoothly between physics steps even when the
-// step rate (50 Hz x scale) and the 50 Hz emit cadence are out of phase.
-const demoClock = { frac: 0, scale: 0.5 };
-function demoDt() { return DEMO.dt * demoClock.scale; }
 
 // Box-Muller: standard normal.
 function gauss() {
@@ -640,9 +634,7 @@ function demoFrame() {
   const accel = demo.a + DEMO.g + gauss() * DEMO.nAccel;  // specific force
   const velocity = demo.v + gauss() * DEMO.nVel;
   return {
-    // Interpolate t through the in-step fraction so it advances smoothly on
-    // the 50 Hz emit cadence regardless of the (slower) physics step rate.
-    t: +(demo.t + demoDt() * demoClock.frac).toFixed(3),
+    t: +demo.t.toFixed(3),
     flight: demo.flight,
     status,
     altitude: +altitude.toFixed(3),
@@ -653,24 +645,21 @@ function demoFrame() {
   };
 }
 function demoStep() {
-  const dt = demoDt();
   if (demo.landed) {
-    // Hold on the pad ~relaunchPause s (sim time), then relaunch: flight++,
-    // t rewinds to 0. The chart reset heuristic (t < lastT - 1) catches the
-    // rewind, as in live telemetry.
-    demo.t += dt;
+    // Hold on the pad ~relaunchPause s, then relaunch: flight++, t rewinds to 0.
+    // The chart reset heuristic (t < lastT - 1) catches the rewind, as in live telemetry.
+    demo.t += DEMO.dt;
     if (demo.t >= DEMO.relaunchPause) demoReset(demo.flight + 1);
     return;
   }
-  // Semi-implicit Euler, mirroring simulator.py step() — same equations and
-  // parameters, only the time step scales with the demo clock.
+  // Semi-implicit Euler, mirroring simulator.py step().
   const thrust = (demo.t < DEMO.boostTime) ? DEMO.thrust : 0;
   const k = demo.chute ? DEMO.chuteK : DEMO.dragK;
   const a = thrust - DEMO.g - k * demo.v * Math.abs(demo.v);
   demo.a = a;
-  demo.v += a * dt;
-  demo.y += demo.v * dt;
-  demo.t += dt;
+  demo.v += a * DEMO.dt;
+  demo.y += demo.v * DEMO.dt;
+  demo.t += DEMO.dt;
   if (!demo.chute && demo.v < 0 && demo.y <= DEMO.chuteAlt) demo.chute = true;
   if (demo.y <= 0 && demo.v <= 0) { demo.y = 0; demo.v = 0; demo.landed = true; }
 }
@@ -689,41 +678,14 @@ function startDemo(forced) {
   linkEl.classList.remove("stale");
   linkEl.classList.add("live");
   linkEl.textContent = "\u25CF LIVE";
-  // Demo-only speed control (hidden in live mode).
-  $("demo-speed").classList.remove("hidden");
   if (demoTimer) return;
-  // Fixed 50 Hz emit cadence (same as live telemetry); the accumulator decides
-  // how many scaled physics steps to run per tick, so sim time advances
-  // `demoClock.scale` sim-seconds per wall-second.
-  let acc = 0, lastTick = performance.now();
-  demoTimer = setInterval(() => {
-    const now = performance.now();
-    acc += (now - lastTick) / 1000 * demoClock.scale;
-    lastTick = now;
-    const stepMs = 1000 / (50 * demoClock.scale); // one physics step covers this much wall time
-    if (acc >= stepMs) {
-      acc = Math.min(acc - stepMs, stepMs * 8);   // clamp catch-up after tab-throttle
-      demoStep();
-      demoClock.frac = 0;
-    } else {
-      demoClock.frac = clamp(acc / stepMs, 0, 0.999); // interpolate t between steps
-    }
-    handleFrame(demoFrame());
-  }, 1000 / 50);
-}
-function setDemoSpeed(scale) {
-  if (!demo.on) return;                      // demo-mode only; no-op in live mode
-  demoClock.scale = scale;
-  document.querySelectorAll(".demo-speed .spd-opt").forEach((b) => {
-    b.classList.toggle("active", parseFloat(b.dataset.scale) === scale);
-  });
+  demoTimer = setInterval(() => { demoStep(); handleFrame(demoFrame()); }, 1000 / 50);
 }
 function stopDemo() {
   if (!demo.on) return;
   demo.on = false;
   if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
   demoBadgeEl.classList.add("hidden"); // back to live: hide the tag, real pill takes over
-  $("demo-speed").classList.add("hidden"); // speed control is demo-only
 }
 
 // ---------- WebSocket (auto-reconnect, gated by demo mode) ----------
@@ -742,11 +704,6 @@ function connect() {
   ws.onclose = () => setTimeout(connect, RECONNECT_MS);
   ws.onerror = () => ws.close();
 }
-// Wire the on-screen speed control (demo-mode only).
-document.querySelectorAll(".demo-speed .spd-opt").forEach((b) => {
-  b.addEventListener("click", () => setDemoSpeed(parseFloat(b.dataset.scale)));
-});
-
 const params = new URLSearchParams(location.search);
 const forcedDemo = params.has("demo") && params.get("demo") !== "0";
 if (forcedDemo) {

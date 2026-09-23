@@ -153,28 +153,6 @@ html, body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.62; }
 }
-
-/* demo-mode speed control: time-scale of the synthetic telemetry (demo only,
-   hidden in live mode). Same pill language as the link / demo-badge pills. */
-.demo-speed { display: flex; align-items: center; gap: 4px;
-  padding: 3px 5px; border: 1px solid var(--cyan-dim); border-radius: 20px;
-  background: rgba(0, 229, 255, 0.04); }
-.spd-label { font-family: var(--font-head); font-weight: 500; font-size: 9px;
-  letter-spacing: 2px; color: var(--muted); margin-right: 4px; }
-.spd-opt {
-  font-family: var(--font-mono); font-size: 11px; line-height: 1;
-  padding: 4px 8px; cursor: pointer; white-space: nowrap;
-  color: var(--muted); background: transparent;
-  border: 1px solid var(--cyan-dim); border-radius: 12px;
-  transition: color .15s, border-color .15s, box-shadow .15s, text-shadow .15s;
-}
-.spd-opt:hover { color: var(--text); border-color: var(--cyan-soft); }
-.spd-opt.active {
-  color: var(--cyan); border-color: var(--cyan-soft);
-  background: rgba(0, 229, 255, 0.08);
-  text-shadow: 0 0 8px rgba(0, 229, 255, 0.6);
-  box-shadow: 0 0 8px rgba(0, 229, 255, 0.18);
-}
 .readout { font-size: 15px; letter-spacing: 1px; color: var(--muted); }
 .readout span { color: var(--text); font-size: 18px; }
 .readout em { font-style: normal; color: var(--muted); font-size: 12px; margin-left: 2px; }

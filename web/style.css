@@ -163,9 +163,9 @@ html, body {
 
 /* ---------- mission log: record / replay panel (center column) ---------- */
 .mission-log {
-  flex: 0 0 auto; width: 100%; max-width: 600px; height: 46px;
-  display: flex; flex-direction: column; justify-content: center; gap: 3px;
-  padding: 4px 12px 5px;
+  flex: 0 0 auto; width: 100%; max-width: 600px; height: 44px;
+  display: flex; flex-direction: column; justify-content: center; gap: 2px;
+  padding: 3px 12px 4px;
   border: 1px solid var(--cyan-dim); background: rgba(0, 229, 255, 0.03);
 }
 .ml-head { display: flex; align-items: baseline; gap: 12px; }
@@ -209,18 +209,84 @@ html, body {
 .readout span { color: var(--text); font-size: 18px; }
 .readout em { font-style: normal; color: var(--muted); font-size: 12px; margin-left: 2px; }
 
+/* ---------- help pill (top bar, right side) ---------- */
+.help-pill {
+  width: 30px; height: 30px; border-radius: 50%; cursor: pointer; flex: 0 0 auto;
+  font-family: var(--font-head); font-weight: 700; font-size: 15px; line-height: 1;
+  color: var(--cyan-soft); border: 1px solid var(--cyan-dim); background: rgba(0, 229, 255, 0.05);
+  transition: color .15s, border-color .15s, background .15s, box-shadow .15s;
+}
+.help-pill:hover { color: var(--cyan); border-color: var(--cyan-soft);
+  background: rgba(0, 229, 255, 0.12); box-shadow: 0 0 10px rgba(0, 229, 255, 0.25); }
+
+/* ---------- help overlay (factory-styled modal, zero deps) ---------- */
+.help {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(2, 8, 16, 0.78); backdrop-filter: blur(2px);
+}
+.help-box {
+  position: relative;
+  width: min(680px, calc(100% - 60px)); max-height: calc(100% - 60px); overflow-y: auto;
+  padding: 22px 26px 20px;
+  border: 1px solid var(--cyan-soft); border-radius: 6px;
+  background: rgba(2, 12, 22, 0.96); box-shadow: 0 0 40px rgba(0, 229, 255, 0.15);
+}
+.help-close {
+  position: absolute; top: 10px; right: 12px; width: 26px; height: 26px; cursor: pointer;
+  font-family: var(--font-head); font-size: 13px; color: var(--muted);
+  background: none; border: 1px solid var(--cyan-dim); border-radius: 4px;
+}
+.help-close:hover { color: var(--cyan); border-color: var(--cyan-soft); }
+.help-title { font-family: var(--font-head); font-weight: 700; font-size: 15px; letter-spacing: 3px;
+  color: var(--cyan); text-shadow: 0 0 10px rgba(0, 229, 255, 0.5); margin-bottom: 12px; }
+.help-h { font-family: var(--font-head); font-weight: 700; font-size: 11px; letter-spacing: 2.5px;
+  color: var(--cyan-soft); margin: 16px 0 6px; }
+.help-sec { font-size: 12.5px; line-height: 1.55; color: var(--text); }
+.help-sec b, .help-list b { color: #eaffff; }
+.help-sec code, .help-list code { font-family: var(--font-mono); color: var(--cyan-soft);
+  background: rgba(0, 229, 255, 0.07); padding: 0 4px; border-radius: 3px; }
+.help-table { width: 100%; border-collapse: collapse; font-size: 12px; line-height: 1.45; }
+.help-table td { padding: 5px 8px; border: 1px solid var(--cyan-dim); vertical-align: top; }
+.help-table td:first-child { white-space: nowrap; }
+.help-list { margin-left: 18px; font-size: 12.5px; line-height: 1.6; color: var(--text); }
+.hd { display: inline-block; font-family: var(--font-head); font-weight: 700; font-size: 9px;
+  letter-spacing: 1.5px; padding: 3px 8px; border-radius: 20px; border: 1px solid; white-space: nowrap; }
+.hd-live { color: var(--parachute); border-color: var(--parachute); background: rgba(61, 220, 132, 0.08); }
+.hd-replay { color: var(--cyan); border-color: rgba(0, 229, 255, 0.55); background: rgba(0, 229, 255, 0.07); }
+.hd-demo { color: var(--amber); border-color: rgba(255, 171, 0, 0.55); background: rgba(255, 171, 0, 0.07); }
+.hd-rec { color: #ff5c33; border-color: rgba(255, 92, 51, 0.7); background: rgba(255, 92, 51, 0.08); }
+
+/* ---------- relaunch flash (t-rewind chart reset) ---------- */
+.relaunch {
+  position: absolute; top: 38%; left: 50%; z-index: 5; pointer-events: none;
+  transform: translate(-50%, -50%) scale(0.96); opacity: 0;
+  font-family: var(--font-head); font-weight: 700; font-size: 22px; letter-spacing: 8px;
+  padding: 10px 30px; border: 1px solid var(--cyan-soft); border-radius: 4px;
+  color: var(--cyan); text-shadow: 0 0 14px currentColor; background: rgba(0, 229, 255, 0.06);
+  transition: opacity .18s, transform .18s;
+}
+.relaunch.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+
 /* ---------- main gauge area ---------- */
 .main {
   position: relative; z-index: 3; flex: 1;
   display: grid; grid-template-columns: 1fr 1.3fr 1fr;
   align-items: center; gap: 10px; min-height: 0;
 }
-.col { display: flex; flex-direction: column; justify-content: center; gap: 8px; }
-.center { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; min-height: 0; }
+/* Columns fill the .main height so the flex fallback below can engage:
+   content is centered when it fits (as before); when it doesn't, "safe"
+   reverts to start-alignment and the shrinkable instruments compress
+   instead of the HUD clipping the top of the column. */
+.col { display: flex; flex-direction: column; justify-content: center; justify-content: safe center; gap: 8px; height: 100%; min-height: 0; }
+.center { display: flex; flex-direction: column; align-items: center; justify-content: center; justify-content: safe center; gap: 6px; height: 100%; min-height: 0; }
 
 /* ---------- gauges ---------- */
-.gauge { position: relative; width: 100%; max-width: 220px; margin: 0 auto; }
-.gauge svg { width: 100%; height: auto; display: block; overflow: visible; }
+.gauge { position: relative; width: 100%; max-width: 220px; margin: 0 auto; flex: 0 1 auto; min-height: 0; }
+/* Normal case: square at the container width (as before). When the column is
+   too short and flex compresses the .gauge box, max-height clamps the square
+   to the (shorter) height and the width follows the 1:1 viewBox ratio. */
+.gauge svg { width: 100%; height: auto; max-height: 100%; display: block; overflow: visible; }
 
 .gauge-ring { fill: none; stroke: var(--cyan-dim); stroke-width: 1.5;
   stroke-dasharray: 4 8; transform-origin: center; animation: spin 24s linear infinite; }
@@ -244,10 +310,11 @@ html, body {
 .alttape-wrap {
   position: relative;
   display: flex; align-items: stretch; justify-content: center;
-  gap: 6px; height: 100%; max-height: 560px;
+  gap: 6px; flex: 0 1 auto; min-height: 0; max-height: 560px;
 }
-.reactor { position: relative; width: 100%; max-width: 300px; margin: 0 auto; flex: 0 1 auto; }
-.reactor svg { width: 100%; height: auto; display: block; overflow: visible; position: relative; z-index: 2; }
+.reactor { position: relative; width: 100%; max-width: 300px; margin: 0 auto; flex: 0 1 auto; min-height: 0; }
+/* max-height lets the SVG letterbox-shrink when the center column is tight */
+.reactor svg { width: 100%; height: auto; max-height: 100%; display: block; overflow: visible; position: relative; z-index: 2; }
 .reactor-core {
   position: absolute; top: 50%; left: 50%; width: 44%; height: 44%;
   transform: translate(-50%, -50%); border-radius: 50%; z-index: 1;
@@ -309,8 +376,8 @@ html, body {
 }
 
 /* ---------- attitude indicator ---------- */
-.attitude { width: 100%; max-width: 210px; margin: 4px auto 0; }
-.attitude svg { width: 100%; height: auto; display: block; overflow: visible; }
+.attitude { width: 100%; max-width: 210px; margin: 4px auto 0; flex: 0 1 auto; min-height: 0; }
+.attitude svg { width: 100%; height: auto; max-height: 100%; display: block; overflow: visible; }
 .att-frame { fill: none; stroke: var(--cyan-soft); stroke-width: 1.5; }
 .att-sky { fill: rgba(0, 90, 140, 0.30); }
 .att-ground { fill: rgba(90, 45, 8, 0.38); }
@@ -327,6 +394,7 @@ html, body {
 .mini {
   display: flex; flex-direction: column; gap: 6px;
   width: 100%; max-width: 200px; margin: 4px auto 0;
+  flex: 0 1 auto; min-height: 0;
 }
 .mini-row {
   display: flex; align-items: baseline; gap: 4px;
@@ -344,7 +412,7 @@ html, body {
   position: relative; z-index: 3;
   margin-top: 6px; padding-top: 10px;
   border-top: 1px solid var(--cyan-dim);
-  height: 190px;
+  height: 168px;
   display: flex; flex-direction: row; align-items: stretch; gap: 18px;
 }
 .radar { position: relative; flex: 0 0 auto; width: 150px; }
@@ -382,30 +450,69 @@ html, body {
 .awaiting-sub code { color: var(--cyan-soft); }
 @keyframes flicker { 0%,100% { opacity: 1; } 45% { opacity: 1; } 50% { opacity: 0.55; } 55% { opacity: 1; } }
 
-/* ---------- short-viewport fit ---------- */
+/* ---------- short-viewport fit ----------
+   Fit math (px). Available height for the .main columns:
+     avail = VH - hud padding (18+18) - topbar - 6 (topbar margin)
+                     - 6 (bottombar margin) - bottombar (168)
+   topbar = 63 (base, status 30px) / 56 (<=900, status 24px) / 50 (<=700, status 20px)
+   so avail = VH - 279 (base) / VH - 272 (<=900) / VH - 266 (<=700)
+   Column totals (content heights):
+     left  = 2*gauge + 8 + 8 + 4 + attitude (h = 0.75 * w)
+     center= compass (~60: 36 window + 3 + 21 readout) + 6 + reactor
+             (square = its max-width; wrap = stretch of the reactor)
+             + 6 + mission-log
+     right = 2*gauge + 8 + 8 + 4 + mini (~60: 2 rows @ 20px + 6 gap)
+   Breakpoints are chosen so every column <= avail at the SHORTEST viewport
+   of its band (560/640/700/820/900/1080 all pass; see report table).
+   When content still exceeds avail (extreme 560 px), "safe center" keeps
+   the top visible and flex-shrink compresses the reactor/gauge SVGs.      */
+@media (max-height: 900px) {
+  .gauge { max-width: 190px; }
+  .attitude { max-width: 180px; }
+  .mini { max-width: 175px; }
+  .mini-val { font-size: 17px; }
+  .reactor { max-width: 270px; }
+  .alttape-wrap { max-height: 480px; }
+  .status { font-size: 24px; letter-spacing: 6px; }
+  .brand-name { font-size: 21px; }
+}
 @media (max-height: 820px) {
-  .gauge { max-width: 185px; }
-  .attitude { max-width: 175px; }
-  .mini { max-width: 170px; }
+  .gauge { max-width: 148px; }
+  .attitude { max-width: 148px; }
+  .mini { max-width: 145px; }
   .mini-val { font-size: 17px; }
   .reactor { max-width: 260px; }
   .alttape-wrap { max-height: 480px; }
   .compass { width: 250px; }
   .status { font-size: 24px; letter-spacing: 6px; }
   .brand-name { font-size: 21px; }
-  .mission-log { height: 42px; max-width: 560px; }
+  .mission-log { height: 42px; max-width: 560px; padding: 3px 10px 3px; }
   .ml-info { font-size: 10px; }
+  .ml-btn { font-size: 9px; padding: 2px 10px 3px; }
+  .ml-sel { font-size: 10px; padding: 2px 5px; }
 }
 @media (max-height: 700px) {
-  .gauge { max-width: 160px; }
-  .attitude { max-width: 150px; }
+  .gauge { max-width: 130px; }
+  .attitude { max-width: 120px; }
+  .mini { max-width: 140px; }
   .mini-val { font-size: 15px; }
   .reactor { max-width: 225px; }
   .alttape-wrap { max-height: 400px; }
   .status { font-size: 20px; }
-  .mission-log { height: 38px; max-width: 540px; padding: 3px 10px 4px; }
+  .mission-log { height: 36px; max-width: 540px; padding: 2px 10px; }
+  .ml-title { font-size: 9px; }
+  .ml-src { font-size: 9px; }
   .ml-ctl { gap: 6px; }
-  .ml-btn { font-size: 8px; padding: 2px 8px 3px; }
-  .ml-sel { font-size: 10px; }
+  .ml-btn { font-size: 8px; padding: 1px 8px 2px; }
+  .ml-sel { font-size: 9px; padding: 1px 5px; }
   .ml-note { display: none; }
+}
+@media (max-height: 640px) {
+  .gauge { max-width: 110px; }
+  .attitude { max-width: 100px; }
+  .mini { max-width: 130px; }
+  .mini-val { font-size: 14px; }
+  .reactor { max-width: 220px; }
+  .alttape-wrap { max-height: 220px; }
+  .compass { width: 240px; }
 }

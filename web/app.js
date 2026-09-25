@@ -34,6 +34,9 @@ const velBigEl = $("vel-big");
 const altBigEl = $("alt-big");
 const trendVelEl = $("trend-vel");
 const trendAltEl = $("trend-alt");
+const helpBtn = $("help-btn");
+const helpEl = $("help");
+const relaunchEl = $("relaunch");
 
 // ---------- geometry helpers ----------
 // 270° arc, gap at the bottom: 135° -> 405° (SVG y-down, clockwise).
@@ -481,6 +484,7 @@ function handleFrame(f) {
   if (!gotFrame) {
     gotFrame = true;
     awaitingEl.classList.add("hidden");
+    maybeAutoShowHelp();           // first real/replay/demo frame: offer help once
   }
 
   // New flight (t rewinds): clear event markers + trend buffers.
@@ -489,7 +493,8 @@ function handleFrame(f) {
     markers.length = 0;
     bufAlt.length = 0;
     bufVel.length = 0;
-  }
+    relaunchFlash(f.flight); // brief "RELAUNCH · FLIGHT N" flash so the chart
+  }                           // reset reads as an intentional relaunch, not a glitch
 
   // Event markers on status transitions. Gated on wasLive so the WS
   // 400-frame replay never records a transition straddling two flights.
@@ -591,7 +596,8 @@ setInterval(() => {
   linkEl.classList.toggle("stale", stale);
   linkEl.classList.toggle("live", !stale);
   linkEl.textContent = stale ? "● LINK STALE" : "● LIVE";
-}, 400);
+  updateSessionUI();             // keep MISSION LOG (src + plain-English note) in sync
+}, 400);                         // in pure LIVE mode — replay/demo drive their own ticks
 
 // ---------- mission log: replay player + session recorder ----------
 // REPLAY is a pure frame cursor over pre-stored NDJSON frames — never physics
@@ -634,7 +640,7 @@ function loadMission(url, { onOk, onFail } = {}) {
       console.warn("mission load failed:", url, e);
       (onFail || (() => {}))();
     });
-}
+  }
 
 function replaySetUI() {
   replayBadgeEl.classList.toggle("hidden", !replay.on);
@@ -662,6 +668,32 @@ function mlInfo() {
     mlInfoEl.textContent = "—";
   }
 }
+// Plain-English one-liner for #ml-note (the technical T+/frames/Hz readout
+// stays in #ml-info). Transient messages (saved ✓, nothing captured, no
+// mission file) are pushed here via mlNote(); the base text is restored from
+// the current mode when the transient expires.
+function mlBaseNote() {
+  if (record.on) return "Recording… press again to stop & download";
+  if (replay.on) return "Playing a captured flight — loops automatically";
+  if (demo.on) return "No link — synthetic flight running in your browser";
+  if (gotFrame) return "Receiving live telemetry (simulator or rocket)";
+  return "Press ▶ PLAY to watch a captured flight";
+}
+let noteTimer = 0;
+function setBaseNote() {
+  if (noteTimer) return;           // a transient message is in flight
+  mlNoteEl.textContent = mlBaseNote();
+  mlNoteEl.classList.remove("ok");
+}
+function mlNote(msg, { ok = false, ms = 4000 } = {}) {
+  mlNoteEl.textContent = msg;
+  mlNoteEl.classList.toggle("ok", ok);
+  if (noteTimer) clearTimeout(noteTimer);
+  noteTimer = setTimeout(() => {
+    noteTimer = 0;
+    setBaseNote();                 // back to the current mode's one-liner
+  }, ms);
+}
 function updateSessionUI() {
   if (replay.on) {
     mlSrcEl.textContent = "REPLAY";
@@ -677,6 +709,7 @@ function updateSessionUI() {
   mlSrcEl.classList.toggle("rec", record.on);
   mlPlayBtn.classList.toggle("playing", replay.on && replay.playing);
   mlInfo();
+  if (!noteTimer) setBaseNote();   // keep the plain-English line in sync
 }
 function replayStep(nowMs) {
   if (replay.endAt) {                       // end-of-file: rest on the pad
@@ -728,9 +761,7 @@ function startReplay(forced) {
       },
       onFail: () => {
         replay.on = false;                    // never die: fall back to the demo
-        mlNoteEl.textContent = "NO MISSION FOUND";
-        mlNoteEl.classList.add("ok");
-        setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+        mlNote("No mission file found — falling back to demo", { ms: 4000 });
         startDemo(false);
       },
     });
@@ -780,9 +811,7 @@ function startRecording() {
   record.frames = [];
   mlRecBtn.classList.add("rec");
   mlRecBtn.textContent = "\u25A0 STOP";
-  mlNoteEl.textContent = "RECORDING\u2026";
-  mlNoteEl.classList.remove("ok");
-  updateSessionUI();
+  updateSessionUI();                   // #ml-note switches to the plain-English REC line
 }
 function stopRecording(silent) {
   if (!record.on) return;
@@ -801,13 +830,10 @@ function stopRecording(silent) {
     a.remove();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
     if (!silent) {
-      mlNoteEl.textContent = "SAVED \u2713";
-      mlNoteEl.classList.add("ok");
-      setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+      mlNote("Mission saved \u2713 (check your Downloads)", { ok: true, ms: 4000 });
     }
   } else if (!silent) {
-    mlNoteEl.textContent = "NOTHING CAPTURED";
-    setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; }, 4000);
+    mlNote("Nothing captured \u2014 press \u25CF REC first, then watch something", { ms: 4000 });
   }
   updateSessionUI();
 }
@@ -819,9 +845,7 @@ mlPlayBtn.addEventListener("click", () => {
   else loadMission(MISSION_URL, {
     onOk: () => startReplay(false),
     onFail: () => {
-      mlNoteEl.textContent = "NO MISSION FOUND";
-      mlNoteEl.classList.add("ok");
-      setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+      mlNote("No mission file found on this site", { ms: 4000 });
     },
   });
 });
@@ -830,9 +854,7 @@ mlSel.addEventListener("change", () => {
   loadMission(url, {
     onOk: () => { if (replay.on) stopReplay(); startReplay(false); },
     onFail: () => {
-      mlNoteEl.textContent = "NO MISSION FOUND";
-      mlNoteEl.classList.add("ok");
-      setTimeout(() => { mlNoteEl.textContent = "RECORDED TELEMETRY"; mlNoteEl.classList.remove("ok"); }, 4000);
+      mlNote("No mission file found on this site", { ms: 4000 });
     },
   });
 });
@@ -921,12 +943,10 @@ function demoStep() {
 }
 
 let demoTimer = null;
-let demoStart = 0;
 function startDemo(forced) {
   if (demo.on) return;
   demo.on = true;
   demo.forced = !!forced;
-  if (demoStart === 0) demoStart = Date.now(); // one 5-s grace window per page load
   if (demo.flight === 0) demoReset(1);         // first flight of this session
   awaitingEl.classList.add("hidden");          // demo: no AWAITING TELEMETRY overlay
   demoBadgeEl.classList.remove("hidden");      // amber DEMO tag
@@ -962,6 +982,40 @@ function connect() {
   ws.onclose = () => setTimeout(connect, RECONNECT_MS);
   ws.onerror = () => ws.close();
 }
+// ---------- help overlay (? in the top bar; auto-shows once per browser) ----------
+function openHelp() { helpEl.classList.remove("hidden"); }
+function closeHelp() { helpEl.classList.add("hidden"); }
+helpBtn.addEventListener("click", () => {
+  if (helpEl.classList.contains("hidden")) openHelp(); else closeHelp();
+});
+$("help-close").addEventListener("click", closeHelp);
+helpEl.addEventListener("click", (e) => { if (e.target === helpEl) closeHelp(); }); // backdrop
+function maybeAutoShowHelp() {
+  try {
+    if (localStorage.getItem("apex1_help_seen")) return; // don't nag on revisit
+    localStorage.setItem("apex1_help_seen", "1");
+    openHelp();
+  } catch (_) { /* storage unavailable: the ? button still works */ }
+}
+
+// ---------- relaunch flash (t-rewind chart reset reads as intentional) ----------
+let relaunchTimer = 0;
+function relaunchFlash(flight) {
+  relaunchEl.textContent = `RELAUNCH \u00B7 FLIGHT ${String(flight).padStart(3, "0")}`;
+  relaunchEl.classList.add("show");
+  if (relaunchTimer) clearTimeout(relaunchTimer);
+  relaunchTimer = setTimeout(() => relaunchEl.classList.remove("show"), 900);
+}
+
+// ---------- boot: the first telemetry source to win starts the HUD ----------
+// ?demo=1 and ?replay=1 are immediate. Otherwise the recorded mission is
+// fetched IN PARALLEL with the WebSocket connect — no 5 s gate before replay:
+//   * WS frame arrives first (local GCS) -> LIVE; the pending replay is
+//     ignored (gotFrame), and a live frame still beats a running replay.
+//   * fetch resolves first (typical on the public page, ~50-300 ms) ->
+//     REPLAY starts immediately.
+//   * fetch fails -> wait for the WS; after 5 s with no frame -> DEMO
+//     (last resort, unchanged).
 const params = new URLSearchParams(location.search);
 const forcedDemo = params.has("demo") && params.get("demo") !== "0";
 const forcedReplay = !forcedDemo && params.has("replay") && params.get("replay") !== "0";
@@ -970,8 +1024,16 @@ if (forcedDemo) {
 } else if (forcedReplay) {
   startReplay(true);            // ?replay=1 -> replay now, no WS (demo on fetch fail)
 } else {
-  connect();                    // normal WS flow (auto-reconnects if it drops)
-  setTimeout(() => {            // no live feed: play the recorded flight; if the
-    if (!gotFrame && !sessionActive()) startReplay(false);  // mission is missing,
-  }, 5000);                     // the replay loader itself falls back to the demo.
+  connect();                    // WS first: auto-reconnects if it drops
+  loadMission(MISSION_URL, {    // ...and in parallel, fetch the recorded flight
+    onOk: () => {
+      // A live frame already won (or a session was started): drop the pending
+      // replay. Otherwise start playing the captured flight right now.
+      if (!gotFrame && !sessionActive()) startReplay(false);
+    },
+    onFail: () => { /* no mission file: the 5 s demo fallback below applies */ },
+  });
+  setTimeout(() => {            // last resort: no live feed AND no mission file
+    if (!gotFrame && !sessionActive()) startDemo(false);
+  }, 5000);
 }

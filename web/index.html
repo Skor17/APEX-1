@@ -38,9 +38,10 @@
       <div class="telemetry-top">
         <div class="link" id="link">● AWAITING</div>
         <div class="demo-badge hidden" id="demo-badge">DEMO · SYNTHETIC TELEMETRY</div>
-        <div class="demo-badge replay-badge hidden" id="replay-badge">REPLAY · RECORDED TELEMETRY</div>
+        <div class="demo-badge replay-badge hidden" id="replay-badge">REPLAY · CAPTURED FLIGHT</div>
         <div class="readout">MET <span id="met">0.0</span><em>s</em></div>
         <div class="readout">FLT <span id="flight">—</span></div>
+        <button class="help-pill" id="help-btn" title="How this works — modes, recording, where data lives">?</button>
       </div>
     </header>
 
@@ -64,10 +65,10 @@
             <span class="ml-info" id="ml-info">—</span>
           </div>
           <div class="ml-ctl">
-            <button class="ml-btn" id="ml-rec" title="Record this session">● REC</button>
-            <button class="ml-btn" id="ml-play" title="Play / pause the mission">▶ PLAY</button>
-            <select class="ml-sel" id="ml-sel" title="Choose a mission to replay"></select>
-            <span class="ml-note" id="ml-note">RECORDED TELEMETRY</span>
+            <button class="ml-btn" id="ml-rec" title="Start/stop recording what you're watching — on stop, your browser downloads the mission file">● REC</button>
+            <button class="ml-btn" id="ml-play" title="Play or pause the selected recorded mission">▶ PLAY</button>
+            <select class="ml-sel" id="ml-sel" title="Captured missions available on this site"></select>
+            <span class="ml-note" id="ml-note">Press ▶ PLAY to watch a captured flight</span>
           </div>
         </section>
       </div>
@@ -90,6 +91,36 @@
     <div class="awaiting" id="awaiting">
       <div class="awaiting-text">AWAITING TELEMETRY</div>
       <div class="awaiting-sub">start the vehicle&nbsp;·&nbsp;<code>python simulator.py</code></div>
+    </div>
+
+    <!-- relaunch flash: brief center banner when a flight restarts (charts clear) -->
+    <div class="relaunch" id="relaunch"></div>
+
+    <!-- help overlay: plain-English manual, opens from the ? pill (auto-shows once) -->
+    <div class="help hidden" id="help">
+      <div class="help-box">
+        <button class="help-close" id="help-close" title="Close help">✕</button>
+        <h2 class="help-title">APEX-1 · HOW THIS WORKS</h2>
+        <p class="help-sec">This is APEX-1 — Litoral Systems' cockpit display for a sounding rocket. It shows live or recorded flight telemetry: altitude, velocity, acceleration, air pressure, temperature, and a synthesized attitude view.</p>
+        <h3 class="help-h">The four modes</h3>
+        <table class="help-table">
+          <tr><td><span class="hd hd-live">● LIVE</span></td><td><b>LIVE</b></td><td>Real data from the rocket or the PC simulator.</td></tr>
+          <tr><td><span class="hd hd-replay">REPLAY · CAPTURED FLIGHT</span></td><td><b>REPLAY</b></td><td>Playing a captured flight file. This is what the public page shows by default.</td></tr>
+          <tr><td><span class="hd hd-demo">DEMO · SYNTHETIC TELEMETRY</span></td><td><b>DEMO</b></td><td>Synthetic flight generated in your browser when nothing else is connected.</td></tr>
+          <tr><td><span class="hd hd-rec">● REC</span></td><td><b>REC</b></td><td>You are capturing whatever is on screen (the button glows red).</td></tr>
+        </table>
+        <h3 class="help-h">Recording a flight</h3>
+        <p class="help-sec">Press <b>● REC</b> to start saving the telemetry you're watching. Press again to stop — your browser downloads a mission file (<code>.ndjson</code>, one telemetry frame per line). Open it later by pressing <b>▶ PLAY</b> with that file selected. Files recorded in the browser save to your Downloads folder; to publish one for everyone, add it to the repository's <code>web/missions/</code> folder and push.</p>
+        <h3 class="help-h">Where the data lives</h3>
+        <ul class="help-list">
+          <li><b>Your Downloads</b> — anything recorded in the browser.</li>
+          <li><b><code>missions/</code> on your PC</b> — captured by <code>tools/record.py</code>.</li>
+          <li><b><code>data/*.csv</code> on your PC</b> — the ground-truth flight log the simulator writes itself.</li>
+          <li><b><code>web/missions/</code></b> — what the public website plays.</li>
+        </ul>
+        <h3 class="help-h">URL shortcuts</h3>
+        <p class="help-sec"><code>?demo=1</code> forces the synthetic demo · <code>?replay=1</code> forces replay without a live link.</p>
+      </div>
     </div>
   </div>
   <script src="./app.js"></script>

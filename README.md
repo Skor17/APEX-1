@@ -41,8 +41,11 @@ telemetry into the same HUD at `http://localhost:8501`.
 ## How a frame gets on screen
 
 ```
-  [ rocket ESP32 / PC simulator ]   UDP 5551 (JSON)   [ gcs.py ]    WebSocket    [ browser HUD ]
+  [ rocket ESP32 / PC simulator ]   UDP 5551 (JSON)   [ gcs.py ]                    [ browser HUD ]
        the vehicle  --------------->  the ground station  --------->  web/ (this page)
+                                      |
+                                      +-- [ LandingPredictor (Phase 3) ]  -- predicts eta / impact / apogee
+                                          (model/apex1_landing_v1.pkl)       attached as `pred` at push time
 ```
 
 - **The vehicle** — the rocket's flight computer (or `simulator.py` standing
@@ -50,13 +53,15 @@ telemetry into the same HUD at `http://localhost:8501`.
   5551: mission time, flight number, status, altitude, velocity, acceleration,
   air pressure, temperature.
 - **The ground station** — `gcs.py` receives those UDP frames, keeps a rolling
-  buffer, and pushes them to any connected browser over WebSocket. It also
-  serves the HUD's files.
+  buffer, and pushes them to any connected browser over WebSocket. Before the
+  WebSocket push it runs each frame through the **landing predictor** (Phase 3)
+  and attaches the prediction as the optional `pred` field. It also serves the
+  HUD's files.
 - **The browser HUD** — `web/index.html` + `app.js` + `style.css`. It draws
   each frame on the instruments (gauge arcs, altitude reactor, attitude,
-  radar, charts). It can also run without any of the above: the recorded
-  mission file in `web/missions/` is played directly, and a synthetic demo
-  engine can generate frames on its own.
+  radar, charts, and the LNDG PRED countdown). It can also run without any of
+  the above: the recorded mission file in `web/missions/` is played directly,
+  and a synthetic demo engine can generate frames on its own.
 
 The wire carries only the **noisy sensor readings** — what a real ground
 station ever sees. Ground truth is kept internal and logged, so a later phase
@@ -79,8 +84,10 @@ mid-session (forced `?demo=1` / `?replay=1` never get interrupted).
 
 ## Recording a flight
 
-A *mission file* is **NDJSON** — one telemetry frame per line, the same 8 keys
+A *mission file* is **NDJSON** — one telemetry frame per line, the same keys
 in the same order as the wire format (see the [frame table](#telemetry-frame)).
+Recorded missions predate Phase 3 and carry the original 8 fields (no `pred`)
+— the player and instruments handle both, since `pred` is optional.
 One file is one complete flight (`PRE-LAUNCH` → `LANDED`, including the
 ~1.5 s on-pad hold), so the HUD's player can loop it cleanly. Three ways to
 make one:
@@ -117,6 +124,62 @@ at the repo root (PC captures, git-ignored so it doesn't bloat the repo) ·
 4. GitHub Pages redeploys on the push; the new mission is playable on the
    public page (select it in the MISSION LOG dropdown). The committed
    `apex1_flight_001.ndjson` is the default the page plays at boot.
+
+## Phase 3 — Predictive landing
+
+The HUD now shows **LNDG PRED** (right column): a live countdown to the
+predicted landing (`T-12.4s`), the predicted impact speed, the predicted
+apogee, and a confidence bar.
+
+**What it predicts, in plain English.** Given the telemetry the Ground
+Station is watching *right now*, it predicts *when and how the rocket will
+land*: seconds until touchdown, the speed at impact, and the top of the
+flight. You can watch it work: start the simulator, and the countdown
+starts counting down during descent and lands at ~`T-0.0s` at the pad.
+There is also a small amber "LNDG PRED" tick on the altitude chart marking
+the predicted landing time.
+
+**How it was trained.** `tools/train_model.py` generates ~2000 simulated
+flights by running the *same* simulator physics with randomized parameters
+around the real profile (thrust 30–50 m/s², boost 1.5–2.5 s, body drag
+0.0006–0.0015, chute drag 0.10–0.25, chute deploy 40–70 m) — plus the
+simulator's own sensor noise, so the model trains on exactly what the GCS
+sees. Each flight contributes one row every 5 frames (10 Hz); the targets
+(seconds-to-landing, impact velocity, apogee) are computed from the
+flight's *ground truth*. Three gradient-boosted trees (one per target) are
+fit, with 10% of the **flights** held out. Current test accuracy (full
+run, seed 42): **≈ 0.99 s** on the countdown, **≈ 0.7 m/s** on impact
+velocity, **≈ 7.5 m** on apogee — and much tighter in the phases that
+matter: ≈ 0.2 s on the countdown during PARACHUTE. Full numbers in
+`model/metadata.json`, rebuilt on every train.
+
+A note on the countdown's ≈ 1 s error: it is **not** a model weakness —
+it is the limit of the information the wire carries. Before the chute
+opens, the landing time depends on the chute's drag (which the model has
+never seen) and on exactly where it deploys; on the test set those vary
+enough to spread true landing times by ~3 s between otherwise identical
+flights. Once the chute is out (and after the burn) the prediction
+narrows sharply. On the real vehicle — fixed burn, one real chute — the
+countdown will sit comfortably inside half a second.
+
+**Where the model lives.** `model/apex1_landing_v1.pkl` (joblib) +
+`model/metadata.json` (feature order, distributions, the MAE report). The
+GCS loads both once at startup; the HUD never runs the model — the
+prediction is computed on the Ground Station and travels on the wire as an
+optional `pred` field, which is why LNDG PRED is dimmed during replay and
+the in-browser demo.
+
+**Retraining.** `pip install -r requirements.txt` (pulls in
+`scikit-learn`), then:
+
+```bash
+python tools/train_model.py          # full run (~2000 flights)
+python tools/train_model.py --quick  # 200 flights, for fast iteration
+python prediction.py                 # sanity-check the model from the CLI
+```
+
+If `model/` is ever missing, the GCS starts normally and simply serves
+frames without `pred` (the instrument stays dimmed) — it never crashes.
 
 ## Running it on your PC
 
@@ -157,13 +220,14 @@ python simulator.py --no-log        # skip CSV logging
 ### Components
 
 ```
-  +----------------------+        UDP / JSON         +---------------------------+
-  |  simulator.py        |  --------------------->   |  gcs.py (FastAPI)         |
-  |  "the vehicle"        |   telemetry frames        |  "the ground station"     |
-  |  (ESP32 stand-in)     |   127.0.0.1:5551          |  WebSocket -> web/ HUD    |
-  +----------------------+                            +---------------------------+
-        |  also logs ground truth + sensor CSV
-        +----> data/apex1_<timestamp>.csv   (feeds the analytics phase)
+  +----------------------+        UDP / JSON         +----------------------------------+
+  |  simulator.py        |  --------------------->   |  gcs.py (FastAPI)                |
+  |  "the vehicle"        |   telemetry frames        |  "the ground station"            |
+  |  (ESP32 stand-in)     |   127.0.0.1:5551          |  +-- LandingPredictor (Phase 3)  |
+  +----------------------+                            |  |    model/apex1_landing_v1.pkl |
+        |  also logs ground truth + sensor CSV        |  +-- WebSocket -> web/ HUD       |
+        +----> data/apex1_<timestamp>.csv             +----------------------------------+
+              (feeds the analytics phase)
 ```
 
 - **`protocol.py`** — the wire contract (port + frame schema). Single source of
@@ -171,7 +235,20 @@ python simulator.py --no-log        # skip CSV logging
 - **`simulator.py`** — the vehicle. Integrates the flight, models the sensors,
   streams telemetry, and logs ground truth + sensor readings.
 - **`gcs.py`** — the ground station. Receives UDP telemetry, keeps a rolling
-  buffer, and pushes frames to the browser over WebSocket. Serves the HUD.
+  buffer, and pushes frames to the browser over WebSocket. Before the push it
+  enriches each frame with the landing prediction (`pred`). Serves the HUD.
+- **`prediction.py`** — the landing predictor (Phase 3). Loads
+  `model/apex1_landing_v1.pkl` + `metadata.json` once;
+  `LandingPredictor.predict(frame, history)` returns
+  `{"eta", "v_impact", "apogee", "conf"}` or `None` (PRE-LAUNCH, LANDED, or
+  model unavailable). Stateless per frame; the confidence comes from the
+  model's measured per-status test error, not a constant.
+- **`tools/train_model.py`** — the Phase 3 trainer. Drives `FlightSimulator`
+  over randomized parameter distributions, samples features at 10 Hz, fits
+  three HistGradientBoosting regressors, and writes `model/`.
+- **`model/`** — the committed artifacts: `apex1_landing_v1.pkl` (the three
+  estimators, joblib) and `metadata.json` (feature order, distributions,
+  seeds, per-target test MAE/R², per-status eta MAE profile).
 - **`web/`** — the HUD itself: `index.html` + `style.css` (the dark cockpit
   look) and `app.js` (WebSocket client, gauges, charts, replay player, session
   recorder, demo engine — all zero-dependency).
@@ -198,6 +275,7 @@ files):
 | `accel`       | m/s²    | MPU6050 — **specific force** (reads ~+9.81 at rest, ~0 in freefall; gauge + charts show it as received) |
 | `pressure`    | hPa     | BMP280                          |
 | `temperature` | °C      | BMP280                          |
+| `pred`        | —       | **optional** (Phase 3): GCS-side landing prediction, attached at WebSocket push time — `{"eta": s, "v_impact": m/s, "apogee": m, "conf": 0..1}`; the vehicle never sends it, and it is omitted entirely when absent (old frames, replay, ESP32, PRE-LAUNCH/LANDED) |
 
 ### The sensor model
 
@@ -241,5 +319,9 @@ barometric (~8 m noise), so landing detection is approximate.
 - **Phase 2** — ESP32 flight computer (C++) publishing the same JSON over UDP.
   Firmware written in `firmware/`; the GCS is unchanged. (Needs the hardware to
   flash and fly.)
-- **Phase 3** — ML landing prediction + satellite map (folium/pydeck), trained on
-  the logged telemetry.
+- **Phase 3** — ML predictive landing. ✅ The GCS runs a gradient-boosted
+  model trained on simulated flights and streams the prediction on the wire
+  as the optional `pred` field; the HUD's LNDG PRED instrument counts down
+  to the predicted landing (see ["Phase 3 — Predictive landing"](#phase-3--predictive-landing)).
+  Remaining: satellite map of the landing point (folium/pydeck) once the
+  firmware reports horizontal position.

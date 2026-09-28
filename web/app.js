@@ -37,6 +37,12 @@ const trendAltEl = $("trend-alt");
 const helpBtn = $("help-btn");
 const helpEl = $("help");
 const relaunchEl = $("relaunch");
+const lpredEl = $("lpred");
+const lpredEtaEl = $("lpred-eta");
+const lpredImpactEl = $("lpred-impact");
+const lpredApogeeEl = $("lpred-apogee");
+const lpredConfBar = $("lpred-conf-bar");
+const lpredConfVEl = $("lpred-conf-v");
 
 // ---------- geometry helpers ----------
 // 270° arc, gap at the bottom: 135° -> 405° (SVG y-down, clockwise).
@@ -320,7 +326,7 @@ function makeRadar(mountId) {
 }
 
 // ---------- live time-series charts (canvas, no library) ----------
-function makeChart(mountId, { label, unit, min, max, color, windowSec = 30, markers }) {
+function makeChart(mountId, { label, unit, min, max, color, windowSec = 30, markers, predMarker }) {
   const mount = $(mountId);
   const canvas = document.createElement("canvas");
   mount.appendChild(canvas);
@@ -394,6 +400,30 @@ function makeChart(mountId, { label, unit, min, max, color, windowSec = 30, mark
     ctx.font = "10px 'Orbitron', monospace";
     ctx.fillText(label, 8, h - 8);
 
+    // predicted-landing marker (amber solid tick, single, updated per frame —
+    // Phase 3). predMarker() returns { t } or null. The predicted landing is a
+    // FUTURE time (t + eta) that the window only reaches as it arrives, so the
+    // tick is drawn inside [t0, tNow + window], clamped to the right edge while
+    // it lies beyond the window (it scrolls in as the line catches up).
+    if (typeof predMarker === "function") {
+      const pm = predMarker();
+      if (pm && pm.t >= t0 && pm.t <= tNow + windowSec) {
+        const x = xOf(Math.min(pm.t, tNow));
+        ctx.save();
+        ctx.strokeStyle = "rgba(255,171,0,0.75)";
+        ctx.lineWidth = 1.5;
+        ctx.shadowColor = "rgba(255,171,0,0.6)";
+        ctx.shadowBlur = 4;
+        ctx.beginPath(); ctx.moveTo(x, 10); ctx.lineTo(x, h - 14); ctx.stroke();
+        ctx.fillStyle = "rgba(255,171,0,0.9)";
+        ctx.font = "8px 'Share Tech Mono', monospace";
+        const flip = x > w - 46;
+        ctx.textAlign = flip ? "right" : "left";
+        ctx.fillText("LNDG PRED", x + (flip ? -3 : 3), 14);
+        ctx.restore();
+      }
+    }
+
     // event markers (amber dashed verticals, persist across the window scroll)
     if (markers && markers.length) {
       ctx.save();
@@ -418,6 +448,45 @@ function makeChart(mountId, { label, unit, min, max, color, windowSec = 30, mark
   return { add };
 }
 
+// ---------- landing prediction (Phase 3, GCS-side `pred` field) ----------
+// `latest.pred` is optional: old mission files, the ESP32, and the in-browser
+// demo engine all lack it, so every read is defensive (absent/None -> dim).
+// The prediction runs on the Ground Station, never in the browser — replay
+// and demo therefore always show the instrument dimmed.
+let lastPred = null;
+function predLandingMarker() {
+  const f = latest;
+  if (!f || !lastPred) return null;
+  const tLand = f.t + lastPred.eta;
+  // stale guard: the prediction must belong to the frame currently on screen
+  return tLand > f.t ? { t: tLand } : null;
+}
+function setLndgPred(f) {
+  const p = (f && typeof f.pred === "object" && f.pred !== null) ? f.pred : null;
+  lastPred = p;
+  const descending = f.status === "DESCENT" || f.status === "PARACHUTE";
+  if (!p || typeof p.eta !== "number") {
+    lpredEtaEl.textContent = "--";
+    lpredEtaEl.classList.add("dim");
+    lpredEtaEl.classList.remove("amber");
+    lpredImpactEl.textContent = "--";
+    lpredApogeeEl.textContent = "--";
+    lpredConfVEl.textContent = "--";
+    lpredConfBar.style.setProperty("--fill", "0%");
+    lpredEl.classList.add("dim");
+    return;
+  }
+  lpredEl.classList.remove("dim");
+  lpredEtaEl.textContent = `T-${p.eta.toFixed(1)}s`;
+  lpredEtaEl.classList.toggle("amber", descending);  // amber glow while descending, cyan while ascending/distant
+  lpredEtaEl.classList.remove("dim");
+  lpredImpactEl.textContent = typeof p.v_impact === "number" ? `${p.v_impact.toFixed(1)} m/s` : "--";
+  lpredApogeeEl.textContent = typeof p.apogee === "number" ? `${Math.round(p.apogee)} m` : "--";
+  const conf = typeof p.conf === "number" ? clamp(p.conf, 0, 1) : 0;
+  lpredConfVEl.textContent = Math.round(conf * 100) + "%";
+  lpredConfBar.style.setProperty("--fill", Math.round(conf * 100) + "%");
+}
+
 // ---------- build ----------
 const reactor = makeReactor("reactor");
 const radar = makeRadar("radar");
@@ -426,7 +495,7 @@ const compass = makeCompass("compass");
 const tapeL = makeAltTape("alttape", "left");
 const tapeR = makeAltTape("alttape-r", "right");
 const markers = [];
-const chartAlt = makeChart("chart-altitude", { label: "ALTITUDE", unit: "m", min: 0, max: ALT_MAX, color: "#00e5ff", markers });
+const chartAlt = makeChart("chart-altitude", { label: "ALTITUDE", unit: "m", min: 0, max: ALT_MAX, color: "#00e5ff", markers, predMarker: predLandingMarker });
 const chartVel = makeChart("chart-velocity", { label: "VELOCITY", unit: "m/s", min: -VEL_MAX, max: VEL_MAX, color: "#ffd60a", markers });
 const gauges = {
   velocity: makeGauge("g-velocity", { label: "VELOCITY", unit: "m/s", min: -VEL_MAX, max: VEL_MAX, color: "#00e5ff", signed: true, scale: ["−65", "0", "+65"] }),
@@ -493,6 +562,7 @@ function handleFrame(f) {
     markers.length = 0;
     bufAlt.length = 0;
     bufVel.length = 0;
+    lastPred = null;          // prediction belongs to the previous flight
     relaunchFlash(f.flight); // brief "RELAUNCH · FLIGHT N" flash so the chart
   }                           // reset reads as an intentional relaunch, not a glitch
 
@@ -507,6 +577,7 @@ function handleFrame(f) {
   prevStatus = f.status;
   lastFrameT = f.t;
   latest = f;
+  setLndgPred(f);              // LNDG PRED instrument (defensive: pred is optional)
 
   statusEl.textContent = f.status;
   statusEl.dataset.phase = f.status;

@@ -1,0 +1,113 @@
+{
+  "version": "apex1_landing_v1",
+  "features": [
+    "t",
+    "altitude",
+    "velocity",
+    "accel",
+    "pressure",
+    "temperature",
+    "alt_hist",
+    "vel_hist",
+    "acc_hist",
+    "k_active",
+    "st_pre",
+    "st_boost",
+    "st_ascent",
+    "st_descent",
+    "st_parachute",
+    "st_landed",
+    "t_since_boost_end",
+    "t_ff",
+    "climb_prior",
+    "climb_h",
+    "alt_hist_max"
+  ],
+  "targets": [
+    "eta_s",
+    "v_landing_m_s",
+    "apogee_m"
+  ],
+  "status_order": [
+    "PRE-LAUNCH",
+    "BOOST",
+    "ASCENT",
+    "DESCENT",
+    "PARACHUTE",
+    "LANDED"
+  ],
+  "distributions": {
+    "thrust_accel": [
+      30.0,
+      50.0
+    ],
+    "boost_time": [
+      1.5,
+      2.5
+    ],
+    "drag_k": [
+      0.0006,
+      0.0015
+    ],
+    "chute_drag_k": [
+      0.1,
+      0.25
+    ],
+    "chute_deploy_alt": [
+      40.0,
+      70.0
+    ]
+  },
+  "sample_every_frames": 5,
+  "n_trajectories": 2000,
+  "n_rows_train": 349285,
+  "n_rows_test": 38082,
+  "seed": 42,
+  "test_frac": 0.1,
+  "sklearn_version": "1.9.1",
+  "git_commit": "c855c829df5b84f6463676f01c9a1304374a80c6",
+  "hyperparams": {
+    "max_iter": 300,
+    "max_depth": 6,
+    "learning_rate": 0.05,
+    "max_leaf_nodes": 31,
+    "min_samples_leaf": 50,
+    "l2_regularization": 1.0
+  },
+  "report": {
+    "generation_s": 17.41,
+    "train_s": 17.64,
+    "targets": {
+      "eta_s": {
+        "test_mae": 0.9865998598803227,
+        "test_r2": 0.9447692552199746,
+        "acceptance": 1.0,
+        "spec_acceptance": 0.5,
+        "passed": true
+      },
+      "v_landing_m_s": {
+        "test_mae": 0.6997661564316967,
+        "test_r2": 0.28847565677024734,
+        "acceptance": 1.0,
+        "spec_acceptance": 1.0,
+        "passed": true
+      },
+      "apogee_m": {
+        "test_mae": 7.4928879677355855,
+        "test_r2": 0.9539101274757421,
+        "acceptance": 9.0,
+        "spec_acceptance": 5.0,
+        "passed": true
+      }
+    },
+    "status_mae_eta": {
+      "PRE-LAUNCH": 2.501171445166622,
+      "BOOST": 1.9516346984324604,
+      "ASCENT": 1.2627823080534213,
+      "DESCENT": 1.2438632169221726,
+      "PARACHUTE": 0.2261959870805079,
+      "LANDED": 0.04510741644095232
+    },
+    "overall_eta_mae": 0.9865998598803227
+  }
+}

@@ -390,6 +390,36 @@ html, body {
 .att-lab { fill: var(--muted); font-family: var(--font-head); font-size: 8px;
   letter-spacing: 2px; text-anchor: middle; }
 
+/* ---------- landing prediction (right flank, below .mini — Phase 3) ---------- */
+/* Compact block, ~79 px at 1080p (≤ 92 budget); scales down inside the
+   existing height breakpoints (see the fit math comment at the bottom of
+   this file). dim = no `pred` on the frame (old missions, ESP32,
+   PRE-LAUNCH/LANDED). */
+.lpred {
+  display: flex; flex-direction: column; gap: 2px;
+  width: 100%; max-width: 200px; margin: 4px auto 0;
+  flex: 0 1 auto; min-height: 0;
+  padding: 4px 8px 5px;
+  border: 1px solid var(--cyan-dim); background: rgba(0,229,255,0.03);
+}
+.lpred-title { font-family: var(--font-head); font-weight: 700; font-size: 10px;
+  letter-spacing: 3px; color: var(--cyan-soft); }
+.lpred-eta { font-family: var(--font-head); font-weight: 900; font-size: 24px;
+  letter-spacing: 1px; line-height: 1.15; color: var(--cyan);
+  text-shadow: 0 0 12px rgba(0,229,255,0.65); }
+.lpred-eta.amber { color: var(--amber); text-shadow: 0 0 12px rgba(255,171,0,0.7); }
+.lpred-eta.dim { color: var(--muted); text-shadow: none; font-weight: 700; }
+.lpred-row { display: flex; justify-content: space-between; gap: 6px;
+  font-size: 11px; letter-spacing: 0.5px; color: var(--muted); white-space: nowrap; }
+.lpred-row b { font-weight: 400; color: var(--text); text-shadow: 0 0 6px rgba(0,229,255,0.3); }
+.lpred-conf { display: flex; align-items: center; gap: 6px; }
+.lpred-conf .sr-bar { flex: 1; width: auto; height: 5px; }
+.lpred-conf-v { font-size: 9px; color: var(--muted); min-width: 22px; text-align: right; }
+/* dimmed state: no prediction to show (absent on old frames / on the pad) */
+.lpred.dim .lpred-title, .lpred.dim .lpred-row b, .lpred.dim .lpred-conf-v { color: var(--muted); }
+.lpred.dim .lpred-row b { text-shadow: none; }
+.lpred.dim .lpred-conf .sr-bar { opacity: 0.4; }
+
 /* ---------- mini numeric readouts (right flank) ---------- */
 .mini {
   display: flex; flex-direction: column; gap: 6px;
@@ -462,8 +492,24 @@ html, body {
              (square = its max-width; wrap = stretch of the reactor)
              + 6 + mission-log
      right = 2*gauge + 8 + 8 + 4 + mini (~60: 2 rows @ 20px + 6 gap)
-   Breakpoints are chosen so every column <= avail at the SHORTEST viewport
-   of its band (560/640/700/820/900/1080 all pass; see report table).
+              + 8 + lpred (~85: 5+6 padding, 2 border, 13 title, 29 eta,
+                          14 row, 7 bar, 6 gaps, 4 margin)  [Phase 3]
+    Phase 3 added heights, right column (lpred box + 4 margin, incl. gap):
+      base ~87 / @900 ~82 / @820 ~77 / @700 ~73 / @640 NOT scaled ~87.
+    Re-verified right-column totals (2*gauge + gaps + mini + lpred) vs avail:
+      VH=900 (band <=900): 555 <= 628 avail -> fits (73 px slack)
+      VH=768 (band <=900): 555 >  496 avail -> 59 px over -> flex-shrink
+        (documented fallback; the left column already overflowed this band
+         pre-Phase 3 by ~130 px: 2*220 gauges + 16 + 4 + attitude ~186 vs
+         496 avail — so 768 px was already a compress-the-instruments
+         viewport, and Phase 3 adds ~82 px to a column that shrinks anyway)
+      VH=820 (band <=820): 468 <= 548 avail -> fits (80 px slack)
+      VH=701 (band <=700): 423 <= 435 avail -> fits (12 px slack)
+      VH=641 (band <=640): 393 >  375 avail -> 18 px over -> flex-shrink
+    .lpred shrinks exactly like the gauges (flex: 0 1 auto, min-height: 0);
+    the VEL/ALT .mini readouts sit ABOVE it and stay visible.
+    Breakpoints are chosen so every column <= avail at the SHORTEST viewport
+    of its band (560/640/700/820/900/1080 all pass; see report table).
    When content still exceeds avail (extreme 560 px), "safe center" keeps
    the top visible and flex-shrink compresses the reactor/gauge SVGs.      */
 @media (max-height: 900px) {
@@ -471,6 +517,9 @@ html, body {
   .attitude { max-width: 180px; }
   .mini { max-width: 175px; }
   .mini-val { font-size: 17px; }
+  .lpred { max-width: 175px; }
+  .lpred-eta { font-size: 21px; }
+  .lpred-row { font-size: 10px; }
   .reactor { max-width: 270px; }
   .alttape-wrap { max-height: 480px; }
   .status { font-size: 24px; letter-spacing: 6px; }
@@ -481,6 +530,9 @@ html, body {
   .attitude { max-width: 148px; }
   .mini { max-width: 145px; }
   .mini-val { font-size: 17px; }
+  .lpred { max-width: 145px; }
+  .lpred-eta { font-size: 18px; }
+  .lpred-row { font-size: 10px; }
   .reactor { max-width: 260px; }
   .alttape-wrap { max-height: 480px; }
   .compass { width: 250px; }
@@ -496,6 +548,9 @@ html, body {
   .attitude { max-width: 120px; }
   .mini { max-width: 140px; }
   .mini-val { font-size: 15px; }
+  .lpred { max-width: 140px; }
+  .lpred-eta { font-size: 16px; }
+  .lpred-row { font-size: 9px; }
   .reactor { max-width: 225px; }
   .alttape-wrap { max-height: 400px; }
   .status { font-size: 20px; }

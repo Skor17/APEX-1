@@ -79,6 +79,15 @@
           <div class="mini-row"><span class="mini-label">VEL</span><span class="mini-val" id="vel-big">--</span><span class="mini-unit">m/s</span><span class="trend" id="trend-vel"></span></div>
           <div class="mini-row"><span class="mini-label">ALT</span><span class="mini-val" id="alt-big">--</span><span class="mini-unit">m</span><span class="trend" id="trend-alt"></span></div>
         </div>
+        <div class="lpred" id="lpred">
+          <div class="lpred-title">LNDG PRED</div>
+          <div class="lpred-eta" id="lpred-eta">--</div>
+          <div class="lpred-row">
+            <span class="lpred-item">IMPACT <b id="lpred-impact">--</b></span>
+            <span class="lpred-item">APOGEE <b id="lpred-apogee">--</b></span>
+          </div>
+          <div class="lpred-conf"><span class="sr-label">CONF</span><span class="sr-bar" id="lpred-conf-bar"></span><span class="lpred-conf-v" id="lpred-conf-v">--</span></div>
+        </div>
       </div>
     </main>
 
@@ -118,6 +127,8 @@
           <li><b><code>data/*.csv</code> on your PC</b> — the ground-truth flight log the simulator writes itself.</li>
           <li><b><code>web/missions/</code></b> — what the public website plays.</li>
         </ul>
+        <h3 class="help-h">LNDG PRED</h3>
+        <p class="help-sec">The right-flank instrument predicts <b>when and how the rocket will land</b> — countdown to predicted landing, predicted impact speed, and predicted apogee. The prediction is made by a small machine-learning model <b>trained on thousands of simulated flights</b> and runs on the Ground Station, not in the browser — so it appears only on live links (it is dimmed during replay and the in-browser demo).</p>
         <h3 class="help-h">URL shortcuts</h3>
         <p class="help-sec"><code>?demo=1</code> forces the synthetic demo · <code>?replay=1</code> forces replay without a live link.</p>
       </div>

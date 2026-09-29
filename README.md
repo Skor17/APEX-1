@@ -44,8 +44,9 @@ telemetry into the same HUD at `http://localhost:8501`.
   [ rocket ESP32 / PC simulator ]   UDP 5551 (JSON)   [ gcs.py ]                    [ browser HUD ]
        the vehicle  --------------->  the ground station  --------->  web/ (this page)
                                       |
-                                      +-- [ LandingPredictor (Phase 3) ]  -- predicts eta / impact / apogee
-                                          (model/apex1_landing_v1.pkl)       attached as `pred` at push time
+                                      +-- [ LandingPredictor (Phase 4) ]  -- predicts eta / impact / apogee
+                                          (model/apex1_landing_v2.pkl)       + landing site + confidence ellipse
+                                                                              attached as `pred` at push time
 ```
 
 - **The vehicle** — the rocket's flight computer (or `simulator.py` standing
@@ -125,9 +126,9 @@ at the repo root (PC captures, git-ignored so it doesn't bloat the repo) ·
    public page (select it in the MISSION LOG dropdown). The committed
    `apex1_flight_001.ndjson` is the default the page plays at boot.
 
-## Phase 3 — Predictive landing
+## Phase 3 — Predictive landing (superseded by Phase 4, kept for history)
 
-The HUD now shows **LNDG PRED** (right column): a live countdown to the
+The HUD shows **LNDG PRED** (right column): a live countdown to the
 predicted landing (`T-12.4s`), the predicted impact speed, the predicted
 apogee, and a confidence bar.
 
@@ -146,12 +147,13 @@ around the real profile (thrust 30–50 m/s², boost 1.5–2.5 s, body drag
 simulator's own sensor noise, so the model trains on exactly what the GCS
 sees. Each flight contributes one row every 5 frames (10 Hz); the targets
 (seconds-to-landing, impact velocity, apogee) are computed from the
-flight's *ground truth*. Three gradient-boosted trees (one per target) are
-fit, with 10% of the **flights** held out. Current test accuracy (full
-run, seed 42): **≈ 0.99 s** on the countdown, **≈ 0.7 m/s** on impact
+flight's *ground truth*. Gradient-boosted trees (one per target) are fit,
+with 10% of the **flights** held out. Phase 3 test accuracy (full run,
+seed 42) was **≈ 0.99 s** on the countdown, **≈ 0.7 m/s** on impact
 velocity, **≈ 7.5 m** on apogee — and much tighter in the phases that
-matter: ≈ 0.2 s on the countdown during PARACHUTE. Full numbers in
-`model/metadata.json`, rebuilt on every train.
+matter: ≈ 0.2 s on the countdown during PARACHUTE. The active model is now
+**v2** (Phase 4, below): same vertical targets plus the landing *site*,
+trained on 2000 flights with randomized wind and tilt.
 
 A note on the countdown's ≈ 1 s error: it is **not** a model weakness —
 it is the limit of the information the wire carries. Before the chute
@@ -162,12 +164,13 @@ flights. Once the chute is out (and after the burn) the prediction
 narrows sharply. On the real vehicle — fixed burn, one real chute — the
 countdown will sit comfortably inside half a second.
 
-**Where the model lives.** `model/apex1_landing_v1.pkl` (joblib) +
-`model/metadata.json` (feature order, distributions, the MAE report). The
-GCS loads both once at startup; the HUD never runs the model — the
-prediction is computed on the Ground Station and travels on the wire as an
-optional `pred` field, which is why LNDG PRED is dimmed during replay and
-the in-browser demo.
+**Where the model lives.** `model/apex1_landing_v2.pkl` (joblib — the
+active model; the v1 file was removed when v2 shipped, retraining
+regenerates it) + `model/metadata.json` (feature order, distributions,
+the MAE report, the confidence-ellipse table). The GCS loads both once at
+startup; the HUD never runs the model — the prediction is computed on the
+Ground Station and travels on the wire as an optional `pred` field, which
+is why LNDG PRED is dimmed during replay and the in-browser demo.
 
 **Retraining.** `pip install -r requirements.txt` (pulls in
 `scikit-learn`), then:
@@ -180,6 +183,75 @@ python prediction.py                 # sanity-check the model from the CLI
 
 If `model/` is ever missing, the GCS starts normally and simply serves
 frames without `pred` (the instrument stays dimmed) — it never crashes.
+
+## Phase 4 — Predicting the landing site
+
+The Phase 3 countdown told the jury *when* the rocket lands. Phase 4 tells
+them ***where***: the GCS now predicts the **landing site** — the (x, y)
+point on the ground the rocket will touch down at — and draws a
+**confidence ellipse** around it that visibly *shrinks* as the flight
+ends. That shrinking ellipse is the demo's money shot: you can watch the
+uncertainty collapse from "somewhere in this big oval" to "right here".
+
+**What it does, in plain English.** A rocket has no GPS in this project,
+so the "flight computer" (the simulator) estimates its ground track from
+its own physics: the pad, the wind, and the drift add up to a touchdown
+point. The wind is a steady breeze (5 m/s by default) plus a light
+sinusoidal gust, and it pushes the rocket off the launch line — freefall
+drifts it one way, the chute mostly stops the drift in the air, and the
+ground track rides the wind until touchdown. On the default profile the
+rocket lands ≈ 19 m downwind. The model learns this pad → wind → drift →
+touchdown mapping from the same live telemetry the GCS already receives:
+`pred` now carries the predicted site (`land_x`, `land_y`) plus the
+ellipse (`ell_a`, `ell_b`, `ell_ang` — 1σ semi-axes and the orientation of
+the major axis, which the HUD rotates by `ell_ang`).
+
+**Why wind matters.** With no GPS, the wind *is* the lateral dynamics:
+it is the only thing that moves the rocket sideways, and it is
+transmitted on the wire (`wind` field) so the model knows exactly what
+it is flying into. Change the demo wind and the predicted — and the
+actual — landing site moves with it.
+
+**How the model learned it.** `tools/train_model.py` (v2) generates 2000
+simulated flights with the vertical parameters randomized around the real
+profile *and* the wind randomized too: speed 2–12 m/s, direction
+0–360°, launch tilt 0–3°. Five gradient-boosted trees are fit — the three
+v1 targets (eta, impact velocity, apogee) plus `land_x` and `land_y` —
+with 10% of the flights held out. Test accuracy (full run, seed 42):
+eta ≈ 0.94 s, impact ≈ 0.67 m/s, apogee ≈ 7.4 m, site ≈ 4.7/5.1 m. The
+site error is honest physics, not model weakness: before the chute opens,
+the touchdown point depends on the chute's drag and deploy altitude,
+which nothing on the wire reveals until the chute is out — from a fixed
+mid-descent state those two hidden parameters alone spread the touchdown
+by ~37 m. Once the chute is out the model sits within ~1.5× of that
+physical floor (the PARACHUTE-bucket site MAE is ≈ 2.8 m). On the real
+vehicle — one real chute, fixed deploy altitude — that floor vanishes.
+
+**The confidence ellipse.** After training, the model's own errors on the
+held-out flights are bucketed by (status, altitude band) and the 2×2
+residual covariance of the site errors is stored per bucket in
+`model/metadata.json`. At serving time the GCS takes the covariance for
+the current bucket and eigen-decomposes it: the 1σ ellipse is the
+principal axes of that cloud. Watch a live flight: during DESCENT the
+major axis is ~9 m wide; by PARACHUTE it is ~4.5 m — the ellipse shrinks
+by half in the last phase of flight, exactly because the held-out data
+says the model is much better there.
+
+**Trying a different wind.** Run the simulator with:
+
+```bash
+python simulator.py --wind-speed 8 --wind-dir 90    # 8 m/s crosswind
+python simulator.py --wind-speed 12 --wind-dir 135 --launch-tilt 2
+```
+
+The predicted site, the ellipse, and the ground track all follow the
+wind. (The HUD rendering of the site + ellipse lands in the Phase 4B
+frontend subtask; the wire and the model are complete now.)
+
+**Retraining.** Same commands as Phase 3 — `python tools/train_model.py`
+(full), `--quick` (200 flights), `python prediction.py` (sanity check).
+Retraining regenerates `model/apex1_landing_v2.pkl` + `metadata.json`
+(including the ellipse table).
 
 ## Running it on your PC
 
@@ -223,32 +295,42 @@ python simulator.py --no-log        # skip CSV logging
   +----------------------+        UDP / JSON         +----------------------------------+
   |  simulator.py        |  --------------------->   |  gcs.py (FastAPI)                |
   |  "the vehicle"        |   telemetry frames        |  "the ground station"            |
-  |  (ESP32 stand-in)     |   127.0.0.1:5551          |  +-- LandingPredictor (Phase 3)  |
-  +----------------------+                            |  |    model/apex1_landing_v1.pkl |
+  |  (ESP32 stand-in)     |   127.0.0.1:5551          |  +-- LandingPredictor (Phase 4)  |
+  +----------------------+                            |  |    model/apex1_landing_v2.pkl |
         |  also logs ground truth + sensor CSV        |  +-- WebSocket -> web/ HUD       |
         +----> data/apex1_<timestamp>.csv             +----------------------------------+
               (feeds the analytics phase)
 ```
 
 - **`protocol.py`** — the wire contract (port + frame schema). Single source of
-  truth; both ends import it.
-- **`simulator.py`** — the vehicle. Integrates the flight, models the sensors,
-  streams telemetry, and logs ground truth + sensor readings.
+  truth; both ends import it. Phase 4 adds three optional fields (`x`, `y`,
+  `wind`) after the original eight, byte-compatible with the legacy 8-key
+  frames the ESP32 sends.
+- **`simulator.py`** — the vehicle. Integrates the flight (2-D since Phase 4:
+  vertical + wind-driven lateral drift, bit-identical vertical physics),
+  models the sensors, streams telemetry, and logs ground truth + sensor
+  readings (the CSV gained `x, vx, y_lat, wy` columns after the original 11).
 - **`gcs.py`** — the ground station. Receives UDP telemetry, keeps a rolling
   buffer, and pushes frames to the browser over WebSocket. Before the push it
   enriches each frame with the landing prediction (`pred`). Serves the HUD.
-- **`prediction.py`** — the landing predictor (Phase 3). Loads
-  `model/apex1_landing_v1.pkl` + `metadata.json` once;
+- **`prediction.py`** — the landing predictor (Phase 4). Loads
+  `model/apex1_landing_v2.pkl` + `metadata.json` once;
   `LandingPredictor.predict(frame, history)` returns
-  `{"eta", "v_impact", "apogee", "conf"}` or `None` (PRE-LAUNCH, LANDED, or
-  model unavailable). Stateless per frame; the confidence comes from the
-  model's measured per-status test error, not a constant.
-- **`tools/train_model.py`** — the Phase 3 trainer. Drives `FlightSimulator`
-  over randomized parameter distributions, samples features at 10 Hz, fits
-  three HistGradientBoosting regressors, and writes `model/`.
-- **`model/`** — the committed artifacts: `apex1_landing_v1.pkl` (the three
+  `{"eta", "v_impact", "apogee", "conf", "land_x", "land_y", "ell_a",
+  "ell_b", "ell_ang"}` or `None` (PRE-LAUNCH, LANDED, or model unavailable).
+  Stateless per frame; the confidence and the confidence ellipse come from
+  the model's measured per-(status, altitude-band) test errors, not
+  constants. Legacy frames (no `x`/`y`/`wind`) still predict — vertical
+  targets stay valid, the site degrades to the windless answer.
+- **`tools/train_model.py`** — the Phase 4 trainer. Drives `FlightSimulator`
+  over randomized parameter distributions (vertical + wind speed 2–12 m/s,
+  wind direction 0–360°, tilt 0–3°), samples features at 10 Hz, fits five
+  HistGradientBoosting regressors, computes the per-bucket landing-site
+  residual covariances, and writes `model/`.
+- **`model/`** — the committed artifacts: `apex1_landing_v2.pkl` (the five
   estimators, joblib) and `metadata.json` (feature order, distributions,
-  seeds, per-target test MAE/R², per-status eta MAE profile).
+  seeds, per-target test MAE/R², per-status + per-bucket eta MAE profiles,
+  and the confidence-ellipse covariance table).
 - **`web/`** — the HUD itself: `index.html` + `style.css` (the dark cockpit
   look) and `app.js` (WebSocket client, gauges, charts, replay player, session
   recorder, demo engine — all zero-dependency).
@@ -275,7 +357,15 @@ files):
 | `accel`       | m/s²    | MPU6050 — **specific force** (reads ~+9.81 at rest, ~0 in freefall; gauge + charts show it as received) |
 | `pressure`    | hPa     | BMP280                          |
 | `temperature` | °C      | BMP280                          |
-| `pred`        | —       | **optional** (Phase 3): GCS-side landing prediction, attached at WebSocket push time — `{"eta": s, "v_impact": m/s, "apogee": m, "conf": 0..1}`; the vehicle never sends it, and it is omitted entirely when absent (old frames, replay, ESP32, PRE-LAUNCH/LANDED) |
+| `x`           | m       | **optional** (Phase 4): downwind position — the vehicle's estimated ground track (no GPS on board); the ESP32 firmware never sends it |
+| `y`           | m       | **optional** (Phase 4): crosswind position (same as `x`) |
+| `wind`        | m/s,°   | **optional** (Phase 4): `{"speed": m/s, "dir": deg}` — the wind the vehicle is flying in (0° = +x downwind) |
+| `pred`        | —       | **optional** (Phase 3/4): GCS-side landing prediction, attached at WebSocket push time — `{"eta": s, "v_impact": m/s, "apogee": m, "conf": 0..1, "land_x": m, "land_y": m, "ell_a": m, "ell_b": m, "ell_ang": rad}` (all keys optional floats; `ell_a`/`ell_b`/`ell_ang` = 1σ confidence ellipse around the predicted site, major-axis angle in [-π/2, π/2)); the vehicle never sends it, and it is omitted entirely when absent (old frames, replay, ESP32, PRE-LAUNCH/LANDED) |
+
+The original 8 fields are byte-compatible with the pre-Phase-4 wire format
+(names, order, types, units unchanged); `x`/`y`/`wind` are strictly
+additive — each is omitted from the JSON when absent, so legacy frames
+(ESP32, old NDJSON missions) parse and re-serialize unchanged.
 
 ### The sensor model
 
@@ -323,5 +413,10 @@ barometric (~8 m noise), so landing detection is approximate.
   model trained on simulated flights and streams the prediction on the wire
   as the optional `pred` field; the HUD's LNDG PRED instrument counts down
   to the predicted landing (see ["Phase 3 — Predictive landing"](#phase-3--predictive-landing)).
-  Remaining: satellite map of the landing point (folium/pydeck) once the
-  firmware reports horizontal position.
+- **Phase 4A** — 2-D flight + landing-SITE prediction (backend). ✅ The
+  simulator is wind-driven 2-D, the wire carries `x`/`y`/`wind`, and the
+  active model (v2) predicts the landing site + a 1σ confidence ellipse
+  that shrinks as the flight ends (see
+  ["Phase 4 — Predicting the landing site"](#phase-4--predicting-the-landing-site)).
+  Remaining: the HUD rendering of the site + ellipse (Phase 4B frontend)
+  and a regenerated mission file with the new fields.

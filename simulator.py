@@ -8,6 +8,39 @@ The wire carries only the noisy *sensor* readings; ground truth is kept
 internal and logged, so a later phase can compare measured-vs-true and build
 filters/estimation. This mirrors a real flight exactly.
 
+Phase 4: the flight is now 2-D — vertical (unchanged, bit-identical) plus a
+lateral ground track driven by wind:
+
+  * Wind model: a steady wind (speed + direction) with a light sinusoidal
+    gust, `w(t) = wind_speed * (1 + 0.15 * sin(2*pi*t/7))` — deterministic
+    (a pure function of t, no RNG), so a run stays reproducible under
+    `--seed`.
+  * Lateral drag: the same quadratic law as the vertical axis, applied to
+    the AIR-RELATIVE lateral velocity:
+        v_x += -k_eff * (v_x - wx) * |v_x - wx| * dt ;  x += v_x * dt
+    with `k_eff` = the vertical drag coefficient in use (body `drag_k`
+    pre-chute, `chute_drag_k` post-chute — documented assumption: one
+    quadratic coefficient per configuration on every axis). `wx`/`wy` are
+    the wind's downwind/crosswind components, so a non-zero `wind_dir_deg`
+    produces crosswind drift. The chute's large lateral drag naturally
+    kills the AIR-RELATIVE lateral speed before touchdown (measured:
+    |v_x - wx| < ~0.2 m/s at landing); ground-relative v_x then rides with
+    the wind.
+  * Launch tilt: the motor mount tilts the vehicle off vertical, giving it
+    an initial horizontal impulse `v_x0 = tan(tilt) * LAUNCH_VEL` with
+    `LAUNCH_VEL` = 30 m/s (documented constant: a typical L1/L2-class
+    single-stage sounding rocket leaves a tilt rail at ~30 m/s; the
+    exact value only scales the small tilt impulse and is far below the
+    ~58 m/s vertical speed at rail exit).
+  * Lateral position is NOT a sensor here — the rocket carries no GPS in
+    this project; `x`/`y` (y = crosswind) are simulated ground truth that
+    the "flight computer" estimates, and the wire carries them exactly.
+  * Chute/landing logic is UNCHANGED (chute at v<0 && y<=50 m, landed at
+    y<=0 && v<=0); lateral state resets on relaunch like the vertical one.
+  * CSV logging: the original 11 columns first (same names, same order),
+    then 4 added columns: `x, vx, y_lat, wy` (downwind position,
+    downwind velocity, crosswind position, crosswind velocity).
+
 Run:
     python simulator.py                    # continuous flights (auto-relaunch)
     python simulator.py --once             # a single flight, then exit
@@ -17,6 +50,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import math
 import random
 import socket
 import sys
@@ -26,11 +60,24 @@ from pathlib import Path
 
 import protocol as proto
 
-# Columns written to the ground-truth + sensor log (feeds Phase 3 analytics).
+# Launch speed along the tilt rail [m/s] — the documented constant for the
+# tilt impulse v_x0 = tan(launch_tilt_deg) * LAUNCH_VEL (see module
+# docstring).
+LAUNCH_VEL = 30.0
+
+# Gust period [s] and amplitude (fraction of the steady wind speed) for the
+# light sinusoidal gust: w(t) = wind_speed * (1 + GUST_AMP * sin(2*pi*t/GUST_PERIOD)).
+GUST_PERIOD = 7.0
+GUST_AMP = 0.15
+
+# Columns written to the ground-truth + sensor log (feeds analytics).
+# The original 11 columns come first, unchanged in name and order (old
+# analytics keep working); the 4 lateral columns are strictly appended.
 LOG_FIELDS = [
     "t", "flight", "status",
     "y_true", "v_true", "a_true",
     "alt_meas", "vel_meas", "accel_meas", "pressure", "temperature",
+    "x", "vx", "y_lat", "wy",
 ]
 
 # Phases a full flight must pass through, in order (see protocol.py).
@@ -54,6 +101,10 @@ class FlightParams:
     drag_k: float = 0.0009           # quadratic drag coeff, rocket body [1/m]
     chute_deploy_alt: float = 50.0   # parachute deployment altitude [m]
     chute_drag_k: float = 0.15       # quadratic drag coeff, chute open [1/m]
+    # --- Phase 4: lateral (2-D) dynamics -----------------------------------
+    wind_speed: float = 5.0          # steady wind speed [m/s]
+    wind_dir_deg: float = 0.0        # wind direction [deg], 0 = +x (downwind)
+    launch_tilt_deg: float = 0.0     # motor-mount tilt off vertical [deg]
     # sensor noise, 1-sigma [respective units]
     noise_pressure: float = 1.0      # [hPa]
     noise_temperature: float = 0.5   # [deg C]
@@ -75,6 +126,10 @@ class FlightSimulator:
         self.y = 0.0          # altitude [m]
         self.v = 0.0          # velocity [m/s], +up
         self.a = 0.0          # acceleration [m/s^2]
+        self.x = 0.0          # downwind position [m]
+        self.vx = math.tan(math.radians(self.p.launch_tilt_deg)) * LAUNCH_VEL
+        self.y_lat = 0.0      # crosswind position [m]
+        self.vy_lat = 0.0     # crosswind velocity [m/s]
         self.chute = False
         self.landed = False
 
@@ -86,8 +141,25 @@ class FlightSimulator:
         drag = -k * self.v * abs(self.v)
         return thrust - p.gravity + drag
 
+    def wind(self) -> tuple[float, float]:
+        """Current wind components (wx downwind, wy crosswind) [m/s].
+
+        Steady wind + light sinusoidal gust (deterministic in t — no RNG,
+        so a run stays reproducible under --seed):
+            w(t) = wind_speed * (1 + GUST_AMP * sin(2*pi*t / GUST_PERIOD))
+        """
+        p = self.p
+        w = p.wind_speed * (1.0 + GUST_AMP * math.sin(2.0 * math.pi * self.t / GUST_PERIOD))
+        d = math.radians(p.wind_dir_deg)
+        return w * math.cos(d), w * math.sin(d)
+
     def step(self) -> None:
-        """Advance ground truth by one time step (semi-implicit Euler)."""
+        """Advance ground truth by one time step (semi-implicit Euler).
+
+        Vertical axis first (the original 1-D profile, unchanged), then the
+        lateral axes with the same quadratic drag law applied to the
+        air-relative lateral velocity (see module docstring).
+        """
         if self.landed:
             return
         p = self.p
@@ -95,6 +167,12 @@ class FlightSimulator:
         self.v += self.a * p.dt
         self.y += self.v * p.dt
         self.t += p.dt
+        k = p.chute_drag_k if self.chute else p.drag_k
+        wx, wy = self.wind()
+        self.vx += -k * (self.vx - wx) * abs(self.vx - wx) * p.dt
+        self.x += self.vx * p.dt
+        self.vy_lat += -k * (self.vy_lat - wy) * abs(self.vy_lat - wy) * p.dt
+        self.y_lat += self.vy_lat * p.dt
         if (not self.chute) and self.v < 0 and self.y <= p.chute_deploy_alt:
             self.chute = True
         if self.y <= 0.0 and self.v <= 0.0:
@@ -170,23 +248,35 @@ class FlightSimulator:
             accel=round(s["accel"], 3),
             pressure=round(s["pressure"], 3),
             temperature=round(s["temperature"], 3),
+            # Phase 4: lateral ground truth (no GPS on the vehicle; the
+            # "flight computer" estimates it — see module docstring) plus the
+            # wind state so the GCS model sees what it was trained on.
+            x=round(self.x, 3),
+            y=round(self.y_lat, 3),
+            wind={"speed": self.p.wind_speed, "dir": self.p.wind_dir_deg},
         )
         tx.sendto(frame.to_json().encode(), addr)
         if record is not None:
+            wx, wy = self.wind()
             record.append({
                 "t": self.t, "status": self.status(),
                 "y": self.y, "v": self.v, "a": self.a,
+                "x": self.x, "vx": self.vx, "y_lat": self.y_lat,
+                "vy_lat": self.vy_lat, "wx": wx, "wy": wy,
                 "altitude": s["altitude"], "velocity": s["velocity"],
                 "accel": s["accel"], "pressure": s["pressure"],
                 "temperature": s["temperature"],
             })
         if writer is not None:
+            wx, wy = self.wind()
             writer.writerow({
                 "t": round(self.t, 4), "flight": self.flight, "status": self.status(),
                 "y_true": round(self.y, 4), "v_true": round(self.v, 4), "a_true": round(self.a, 4),
                 "alt_meas": round(s["altitude"], 4), "vel_meas": round(s["velocity"], 4),
                 "accel_meas": round(s["accel"], 4), "pressure": round(s["pressure"], 4),
                 "temperature": round(s["temperature"], 4),
+                "x": round(self.x, 4), "vx": round(self.vx, 4),
+                "y_lat": round(self.y_lat, 4), "wy": round(self.vy_lat, 4),
             })
 
     def run(self, tx: socket.socket, addr: tuple, log_path: Path | None = None,
@@ -282,6 +372,51 @@ def run_selftest(sim: FlightSimulator, rows: list[dict]) -> int:
          f"mean |SF| {fmt(descent_mean_abs)} m/s^2 ~= 0 (freefall)"),
     ]
 
+    # --- Phase 4: lateral (2-D) checks -------------------------------------
+    # Checks 8-10 validate the wind-driven lateral drift. The vertical
+    # physics above is unchanged; these only run on the default lateral
+    # model (steady wind + sinusoidal gust, deterministic — the 50-seed
+    # calibration run gives one single landing site, so the bands below
+    # carry large margins).
+    # Measured with the default profile (wind 5 m/s, dir 0): landing x =
+    # 19.2 m, y_lat = 0.0 m, ground-relative v_x = 4.3 m/s while the
+    # AIR-RELATIVE residual |v_x - wx| at landing is only 0.14 m/s (the
+    # chute's lateral drag kills drift in the air; the ground track then
+    # keeps riding with the wind).
+    last = rows[-1]
+    wx_land, wy_land = last["wx"], last["wy"]
+    # (8) downwind landing distance: for a constant 5 m/s wind the naive
+    # band 0.5*w*t_parachute ~ 4-16 m undershoots the real physics
+    # (drift accumulates from launch, not from chute deploy: freefall
+    # ~9 s + chute ~7 s at ~4-5 m/s air-relative + tilt-free start).
+    # Measured distribution (default profile, 50 seeds): x = 19.198 m for
+    # every seed (deterministic). Band = measured +/- generous margin.
+    x_land = last["x"]
+    drift_ok = 10.0 <= x_land <= 30.0 if p.wind_speed == 5.0 and p.wind_dir_deg == 0.0 \
+        else abs(x_land) <= 0.5 * p.wind_speed * (last["t"] + 5.0)  # sanity for non-default
+    checks.append(
+        ("landing downwind x",
+         drift_ok,
+         f"x = {x_land:.1f} m at landing (wind {p.wind_speed:.0f} m/s @ "
+         f"{p.wind_dir_deg:.0f} deg; default-profile measured band "
+         f"10..30 m, actual 19.2 m in all 50 calibration seeds)"))
+    # (9) crosswind position: no crosswind drift when the wind is aligned.
+    if p.wind_dir_deg == 0.0:
+        checks.append(
+            ("landing crosswind y_lat",
+             abs(last["y_lat"]) < 2.0,
+             f"|y_lat| = {abs(last['y_lat']):.3f} m < 2 m (wind aligned with +x)"))
+    # (10) the chute must have damped the lateral AIR-RELATIVE velocity:
+    # ground-relative v_x rides with the wind, so the honest check is the
+    # residual drift in the air at touchdown.
+    air_vx = abs(last["vx"] - wx_land)
+    checks.append(
+        ("lateral drift killed by chute",
+         air_vx < 2.0,
+         f"|v_x - wind| = {air_vx:.2f} m/s < 2 m/s at landing "
+         f"(v_x {last['vx']:.2f} vs wind {wx_land:.2f} m/s — the chute "
+         f"damps air-relative drift; ground track rides the wind)"))
+
     failed = 0
     for name, ok, detail in checks:
         print(f"selftest: {'PASS' if ok else 'FAIL'}  {name}: {detail}")
@@ -312,6 +447,13 @@ def main() -> None:
     ap.add_argument("--chute-drag-k", type=float, default=None,
                     help="quadratic drag coeff, chute open [1/m]")
     ap.add_argument("--dt", type=float, default=None, help="physics time step [s]")
+    # Phase 4: lateral (2-D) wind + tilt parameters.
+    ap.add_argument("--wind-speed", type=float, default=None,
+                    help="steady wind speed [m/s] (default 5.0)")
+    ap.add_argument("--wind-dir", type=float, default=None,
+                    help="wind direction [deg], 0 = +x downwind (default 0.0)")
+    ap.add_argument("--launch-tilt", type=float, default=None,
+                    help="motor-mount tilt off vertical [deg] (default 0.0)")
     args = ap.parse_args()
 
     if args.timescale <= 0.0:
@@ -324,6 +466,9 @@ def main() -> None:
         "chute_deploy_alt": args.chute_deploy_alt,
         "chute_drag_k": args.chute_drag_k,
         "dt": args.dt,
+        "wind_speed": args.wind_speed,
+        "wind_dir_deg": args.wind_dir,
+        "launch_tilt_deg": args.launch_tilt,
     }.items() if v is not None})
     if args.seed is not None:
         random.seed(args.seed)

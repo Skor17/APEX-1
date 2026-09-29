@@ -391,7 +391,8 @@ html, body {
   letter-spacing: 2px; text-anchor: middle; }
 
 /* ---------- landing prediction (right flank, below .mini — Phase 3) ---------- */
-/* Compact block, ~79 px at 1080p (≤ 92 budget); scales down inside the
+/* Compact block, ~85 px at 1080p (≤ 92 px budget: 11 padding + 2 border
+   + 13 title + 29 eta + 14 row + 7 bar + 6 gaps); scales down inside the
    existing height breakpoints (see the fit math comment at the bottom of
    this file). dim = no `pred` on the frame (old missions, ESP32,
    PRE-LAUNCH/LANDED). */
@@ -492,22 +493,28 @@ html, body {
              (square = its max-width; wrap = stretch of the reactor)
              + 6 + mission-log
      right = 2*gauge + 8 + 8 + 4 + mini (~60: 2 rows @ 20px + 6 gap)
-              + 8 + lpred (~85: 5+6 padding, 2 border, 13 title, 29 eta,
-                          14 row, 7 bar, 6 gaps, 4 margin)  [Phase 3]
-    Phase 3 added heights, right column (lpred box + 4 margin, incl. gap):
-      base ~87 / @900 ~82 / @820 ~77 / @700 ~73 / @640 NOT scaled ~87.
-    Re-verified right-column totals (2*gauge + gaps + mini + lpred) vs avail:
-      VH=900 (band <=900): 555 <= 628 avail -> fits (73 px slack)
-      VH=768 (band <=900): 555 >  496 avail -> 59 px over -> flex-shrink
-        (documented fallback; the left column already overflowed this band
-         pre-Phase 3 by ~130 px: 2*220 gauges + 16 + 4 + attitude ~186 vs
-         496 avail — so 768 px was already a compress-the-instruments
-         viewport, and Phase 3 adds ~82 px to a column that shrinks anyway)
-      VH=820 (band <=820): 468 <= 548 avail -> fits (80 px slack)
-      VH=701 (band <=700): 423 <= 435 avail -> fits (12 px slack)
-      VH=641 (band <=640): 393 >  375 avail -> 18 px over -> flex-shrink
-    .lpred shrinks exactly like the gauges (flex: 0 1 auto, min-height: 0);
-    the VEL/ALT .mini readouts sit ABOVE it and stay visible.
+               + 8 + lpred (~85: 5+6 padding, 2 border, 13 title, 29 eta,
+                           14 row, 7 bar, 6 gaps, 4 margin)  [Phase 3]
+     Phase 3 added to the right column = 8 (new gap) + 4 (lpred margin)
+     + the .lpred box, which scales: ~82 base / ~75 @900 / ~73 @820 /
+     ~70 @700 / ~68 @640 (all <= the 92 px 1080p budget).
+     Re-verified right-column totals (2*gauge + 8+8+4 + mini + 8 + lpred,
+     gauges at their breakpoint max-width — the binding size at 1920)
+     vs avail:
+       VH=900 (band <=900):  2*190 + 20 + 72 + 8 + 75 = 555 <= 628
+         -> FITS (73 px slack)
+       VH=768 (band <=900):  555 > 496 -> 59 px over -> flex-shrink, the
+         documented fallback (the LEFT column already overflowed here
+         pre-Phase 3: 2*190 + 20 + attitude(0.75*180 + 4) = 539 > 496,
+         43 px over — 1920x768 was always a compress-the-instruments
+         viewport; .lpred has flex: 0 1 auto like the gauges and shrinks
+         with them, VEL/ALT .mini readouts stay visible above it)
+       VH=820 (band <=820):  2*148 + 20 + 72 + 8 + 73 = 469 <= 548
+         -> FITS (79 px slack)
+       VH=701 (band <=700):  2*130 + 20 + 68 + 8 + 70 = 426 <= 435
+         -> FITS (9 px slack)
+       VH=641 (band <=640):  2*110 + 20 + 66 + 8 + 68 = 382 > 375
+         -> 7 px over -> flex-shrink (tiny; same fallback as 560 px)
     Breakpoints are chosen so every column <= avail at the SHORTEST viewport
     of its band (560/640/700/820/900/1080 all pass; see report table).
    When content still exceeds avail (extreme 560 px), "safe center" keeps
@@ -567,6 +574,10 @@ html, body {
   .attitude { max-width: 100px; }
   .mini { max-width: 130px; }
   .mini-val { font-size: 14px; }
+  .lpred { max-width: 130px; }
+  .lpred-eta { font-size: 15px; }
+  .lpred-row { font-size: 9px; }
+  .lpred-title { font-size: 9px; }
   .reactor { max-width: 220px; }
   .alttape-wrap { max-height: 220px; }
   .compass { width: 240px; }
